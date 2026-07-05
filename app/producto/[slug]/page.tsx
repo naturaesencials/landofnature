@@ -19,7 +19,7 @@ export default async function ProductPage({ params }: { params: { slug: string }
       <div className="wrap">
         <p style={{ marginBottom: 20 }}><Link href="/#tienda" className="eyebrow">← Volver a la tienda</Link></p>
         <div className="grid2">
-          <div className="big"><Bottle className="bottle" /></div>
+          <div className="big">{p.image_url ? <img src={p.image_url} alt={p.name} className="pimg" /> : <Bottle className="bottle" />}</div>
           <div>
             <div className="cat">{p.brand}</div>
             <h1>{p.name}</h1>

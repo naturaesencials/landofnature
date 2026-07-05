@@ -62,7 +62,7 @@ export function ProductCard({ p }: { p: Product }) {
       <Link href={`/producto/${p.slug}`} className="art" aria-label={p.name}>
         <span className="tag">{p.category}</span>
         <span className={`chip ${st} stockpill`}><span className="d" />{stockLabel(p)}</span>
-        <Bottle className="bottle" />
+        {p.image_url ? <img src={p.image_url} alt={p.name} className="pimg" loading="lazy" /> : <Bottle className="bottle" />}
       </Link>
       <div className="pbody">
         <div className="cat">{p.brand} · {p.size}</div>
