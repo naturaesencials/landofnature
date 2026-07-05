@@ -11,8 +11,26 @@ export default async function Home() {
     .from("products")
     .select("*")
     .eq("active", true)
-    .order("stock", { ascending: false });
+    .order("name", { ascending: true });
   const products = (data ?? []) as Product[];
+
+  const FAMILIES = ["Cosmética", "Detergencia", "Cuidado Animal"] as const;
+  const SUBORDER: Record<string, string[]> = {
+    "Cosmética": ["Cabello", "Piel"],
+    "Detergencia": ["Textil", "Vajilla", "Limpieza"],
+    "Cuidado Animal": ["Perro", "Gato", "Higiene"],
+  };
+  const FID: Record<string, string> = {
+    "Cosmética": "cosmetica", "Detergencia": "detergencia", "Cuidado Animal": "cuidado-animal",
+  };
+  const byFam = (fam: string) => {
+    const items = products.filter((p) => (p.family || "Otros") === fam);
+    const subs = SUBORDER[fam] ?? [];
+    const extra = [...new Set(items.map((p) => p.category))].filter((c) => !subs.includes(c));
+    return [...subs, ...extra]
+      .map((sc) => ({ sc, list: items.filter((p) => p.category === sc) }))
+      .filter((g) => g.list.length > 0);
+  };
 
   return (
     <>
@@ -35,9 +53,28 @@ export default async function Home() {
             <span className="note">Precio público · compra como invitado</span>
           </div>
           <p className="store-sub">Toca un producto para ver su composición (INCI). Compra en un clic; el pago es con tarjeta o transferencia y no se crea ninguna cuenta.</p>
-          <div className="grid">
-            {products.map((p) => <ProductCard key={p.id} p={p} />)}
-          </div>
+
+          <nav className="catnav" aria-label="Categorías">
+            {FAMILIES.map((f) => <a key={f} href={`#${FID[f]}`} className="catchip">{f}</a>)}
+          </nav>
+
+          {FAMILIES.map((fam) => {
+            const groups = byFam(fam);
+            if (groups.length === 0) return null;
+            return (
+              <div className="family" id={FID[fam]} key={fam}>
+                <h3 className="family-title">{fam}</h3>
+                {groups.map(({ sc, list }) => (
+                  <div className="subcat" key={sc}>
+                    <h4 className="subcat-title">{sc}</h4>
+                    <div className="grid">
+                      {list.map((p) => <ProductCard key={p.id} p={p} />)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
         </div>
       </section>
 

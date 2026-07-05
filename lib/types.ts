@@ -1,5 +1,5 @@
 export type Product = {
-  id: string; slug: string; brand: string; name: string; category: string;
+  id: string; slug: string; brand: string; name: string; family: string | null; category: string;
   size: string | null; sku: string; description: string | null;
   inci: string | null; inci_verified: boolean; public_price: number;
   vat_rate: number; units_per_box: number | null;

@@ -206,3 +206,18 @@ button{font-family:inherit}
 /* ---------- fotos de producto ---------- */
 .pcard .art .pimg{width:100%;height:100%;object-fit:cover;display:block}
 .pdetail .big .pimg{width:100%;height:100%;object-fit:cover;display:block;border-radius:6px}
+
+/* ---------- navegación y agrupación por familia/subcategoría ---------- */
+.catnav{display:flex;flex-wrap:wrap;gap:10px;margin:20px 0 6px}
+.catchip{display:inline-flex;align-items:center;padding:9px 18px;border:1px solid var(--line);border-radius:999px;
+  background:var(--card);color:var(--ink);font-family:var(--font-mono);font-size:11.5px;letter-spacing:.12em;
+  text-transform:uppercase;text-decoration:none;transition:all .15s ease}
+.catchip:hover{border-color:var(--copper);color:var(--copper-d);background:var(--cream)}
+.family{margin-top:48px;scroll-margin-top:86px}
+.family:first-of-type{margin-top:30px}
+.family-title{font-family:var(--font-serif);font-size:28px;font-weight:600;color:var(--ink);
+  padding-bottom:10px;border-bottom:2px solid var(--copper);display:inline-block}
+.subcat{margin-top:26px}
+.subcat-title{display:flex;align-items:center;gap:14px;margin:0 0 14px;font-family:var(--font-mono);
+  font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);font-weight:500}
+.subcat-title::after{content:"";flex:1;height:1px;background:var(--line)}
