@@ -3,7 +3,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { euro, stockState, stockLabel, type Product } from "@/lib/types";
-import { submitAccountRequest, submitContactMessage } from "@/lib/actions";
+import { submitAccountRequest, submitContactMessage, subscribeStock } from "@/lib/actions";
 
 /* ---------------- Carrito ---------------- */
 export type CartLine = { product_id: string; slug: string; name: string; brand: string; size: string | null; price: number; qty: number };
@@ -70,11 +70,14 @@ export function ProductCard({ p }: { p: Product }) {
         <Link href={`/producto/${p.slug}`} className="info">Ver composición (INCI)</Link>
         <div className="pfoot">
           <div className="price"><div className="lab">Precio caja · sin IVA</div><div className="v">{euro(p.public_price)}</div><div className="lab" style={{ marginTop: 2, opacity: .8 }}>+ IVA 21%</div></div>
-          <div className="buyrow">
-            <button className="icon-add" aria-label="Añadir" disabled={out} onClick={() => add(p, 1)}>+</button>
-            <button className="buy1" disabled={out} onClick={() => { add(p, 1); router.push("/checkout"); }}>{out ? "No disponible" : "Comprar"}</button>
-          </div>
+          {!out && (
+            <div className="buyrow">
+              <button className="icon-add" aria-label="Añadir" onClick={() => add(p, 1)}>+</button>
+              <button className="buy1" onClick={() => { add(p, 1); router.push("/checkout"); }}>Comprar</button>
+            </div>
+          )}
         </div>
+        {out && <div className="notify-wrap"><NotifyStock productId={p.id} compact /></div>}
       </div>
     </article>
   );
@@ -213,5 +216,35 @@ export function ContactForm() {
       <button className="btn cta full" style={{ marginTop: 8 }} disabled={busy}>{busy ? "Enviando…" : "Enviar mensaje"}</button>
       <p className="acc-note">🔒 Tus datos se usan solo para responder a tu consulta.</p>
     </form>
+  );
+}
+
+/* ---------- Aviso de reposición (avísame cuando vuelva) ---------- */
+export function NotifyStock({ productId, compact = false }: { productId: string; compact?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const [state, setState] = useState<"idle" | "busy" | "done" | "err">("idle");
+  async function submit() {
+    if (!email.trim() || !email.includes("@")) { setState("err"); return; }
+    setState("busy");
+    const r = await subscribeStock({ product_id: productId, email });
+    setState(r.ok ? "done" : "err");
+  }
+  if (state === "done") return <p className="notify-done">✓ Te avisaremos por correo cuando vuelva.</p>;
+  if (!open) return (
+    <button type="button" className={compact ? "buy1 notify-open" : "btn cta"} onClick={() => setOpen(true)}>
+      Avísame cuando vuelva
+    </button>
+  );
+  return (
+    <div className="notify">
+      <input type="email" inputMode="email" placeholder="tu@correo.com" value={email}
+        onChange={(e) => { setEmail(e.target.value); if (state === "err") setState("idle"); }}
+        onKeyDown={(e) => { if (e.key === "Enter") submit(); }} aria-label="Tu correo" />
+      <button type="button" className="btn cta" disabled={state === "busy"} onClick={submit}>
+        {state === "busy" ? "…" : "Avisar"}
+      </button>
+      {state === "err" && <span className="notify-err">Revisa el correo.</span>}
+    </div>
   );
 }

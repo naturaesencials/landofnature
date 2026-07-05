@@ -27,6 +27,18 @@ export async function submitAccountRequest(form: {
   return { ok: true };
 }
 
+export async function subscribeStock(input: { product_id: string; email: string }): Promise<ActionResult> {
+  if (!input.email || !input.email.trim()) return { ok: false, error: "Introduce tu correo." };
+  const supabase = createClient();
+  const { error } = await supabase.from("stock_notifications").insert({
+    product_id: input.product_id, email: input.email.trim().toLowerCase(),
+  });
+  if (error && !/duplicate|unique|conflict/i.test(error.message)) {
+    return { ok: false, error: "No se pudo registrar el aviso. Inténtalo de nuevo." };
+  }
+  return { ok: true }; // duplicado = ya estaba suscrito, lo tratamos como éxito
+}
+
 export async function submitContactMessage(form: {
   name?: string; email: string; phone?: string; subject?: string; message: string;
 }): Promise<ActionResult> {

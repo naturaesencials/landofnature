@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useCart } from "./ui";
+import { useCart, NotifyStock } from "./ui";
 import { stockState, type Product } from "@/lib/types";
 
 export default function ProductBuy({ p }: { p: Product }) {
@@ -9,6 +9,12 @@ export default function ProductBuy({ p }: { p: Product }) {
   const router = useRouter();
   const [qty, setQty] = useState(1);
   const out = stockState(p) === "out";
+  if (out) return (
+    <div style={{ maxWidth: 420 }}>
+      <p style={{ fontSize: 13.5, color: "var(--muted)", margin: "0 0 8px" }}>Ahora mismo no está disponible. Déjanos tu correo y te avisamos en cuanto vuelva.</p>
+      <NotifyStock productId={p.id} />
+    </div>
+  );
   return (
     <div className="buyrow" style={{ gap: 10 }}>
       <div className="qty" style={{ display: "flex", alignItems: "center", border: "1px solid var(--line)", borderRadius: 3 }}>
