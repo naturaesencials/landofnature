@@ -17,7 +17,7 @@ export default function ProductBuy({ p }: { p: Product }) {
         <button aria-label="más" onClick={() => setQty(q => q + 1)} style={{ width: 36, height: 44, border: 0, background: "transparent", fontSize: 17, cursor: "pointer" }}>+</button>
       </div>
       <button className="btn line" disabled={out} onClick={() => add(p, qty)}>Añadir a la cesta</button>
-      <button className="btn cta" disabled={out} onClick={() => { add(p, qty); router.push("/checkout"); }}>{out ? "Agotado" : "Comprar"}</button>
+      <button className="btn cta" disabled={out} onClick={() => { add(p, qty); router.push("/checkout"); }}>{out ? "No disponible" : "Comprar"}</button>
     </div>
   );
 }

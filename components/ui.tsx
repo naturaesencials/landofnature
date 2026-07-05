@@ -3,7 +3,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { euro, stockState, stockLabel, type Product } from "@/lib/types";
-import { submitAccountRequest } from "@/lib/actions";
+import { submitAccountRequest, submitContactMessage } from "@/lib/actions";
 
 /* ---------------- Carrito ---------------- */
 export type CartLine = { product_id: string; slug: string; name: string; brand: string; size: string | null; price: number; qty: number };
@@ -72,7 +72,7 @@ export function ProductCard({ p }: { p: Product }) {
           <div className="price"><div className="lab">Precio caja · sin IVA</div><div className="v">{euro(p.public_price)}</div><div className="lab" style={{ marginTop: 2, opacity: .8 }}>+ IVA 21%</div></div>
           <div className="buyrow">
             <button className="icon-add" aria-label="Añadir" disabled={out} onClick={() => add(p, 1)}>+</button>
-            <button className="buy1" disabled={out} onClick={() => { add(p, 1); router.push("/checkout"); }}>{out ? "Agotado" : "Comprar"}</button>
+            <button className="buy1" disabled={out} onClick={() => { add(p, 1); router.push("/checkout"); }}>{out ? "No disponible" : "Comprar"}</button>
           </div>
         </div>
       </div>
@@ -166,6 +166,52 @@ export function AccountForm() {
       {err && <p className="formerr">{err}</p>}
       <button className="btn cta full" style={{ marginTop: 8 }} disabled={busy}>{busy ? "Enviando…" : "Enviar solicitud"}</button>
       <p className="acc-note">🔒 Tu solicitud se revisa antes de activar la cuenta. No se crea ninguna cuenta hasta la aprobación.</p>
+    </form>
+  );
+}
+
+/* ---------------- Formulario de contacto ---------------- */
+export function ContactForm() {
+  const [sent, setSent] = useState(false);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setErr("");
+    const f = new FormData(e.currentTarget);
+    if (!(f.get("priv") as string)) { setErr("Marca la casilla de privacidad."); return; }
+    setBusy(true);
+    const res = await submitContactMessage({
+      name: f.get("name") as string, email: f.get("email") as string,
+      phone: f.get("phone") as string, subject: f.get("subject") as string,
+      message: f.get("message") as string,
+    });
+    setBusy(false);
+    if (res.ok) setSent(true); else setErr(res.error || "Error al enviar.");
+  }
+  if (sent) return (
+    <div className="acc-form"><div className="success">
+      <div className="ring">✓</div><h3>Mensaje enviado</h3>
+      <p>Gracias por escribirnos. Te responderemos lo antes posible.</p>
+    </div></div>
+  );
+  return (
+    <form className="acc-form" onSubmit={onSubmit}>
+      <h3>Escríbenos</h3>
+      <p className="fsub">¿Dudas sobre un producto, un pedido o tu cuenta? Cuéntanos.</p>
+      <div className="frow">
+        <div className="field"><label>Nombre</label><input name="name" placeholder="Nombre y apellidos" /></div>
+        <div className="field"><label>Correo *</label><input name="email" type="email" required placeholder="tu@correo.com" /></div>
+      </div>
+      <div className="frow">
+        <div className="field"><label>Teléfono</label><input name="phone" placeholder="+34 600 000 000" /></div>
+        <div className="field"><label>Asunto</label><input name="subject" placeholder="Motivo de tu consulta" /></div>
+      </div>
+      <div className="field"><label>Mensaje *</label><textarea name="message" required placeholder="Escribe aquí tu consulta." /></div>
+      <label className="acc-check"><input type="checkbox" name="priv" value="1" /> Acepto la política de privacidad y el tratamiento de mis datos para gestionar mi consulta.</label>
+      {err && <p className="formerr">{err}</p>}
+      <button className="btn cta full" style={{ marginTop: 8 }} disabled={busy}>{busy ? "Enviando…" : "Enviar mensaje"}</button>
+      <p className="acc-note">🔒 Tus datos se usan solo para responder a tu consulta.</p>
     </form>
   );
 }

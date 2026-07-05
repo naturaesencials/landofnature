@@ -8,6 +8,7 @@ export default function Footer() {
           <div className="fl">
             <Link href="/#cuenta">Crear cuenta</Link>
             <Link href="/acceso">Acceso profesional</Link>
+            <Link href="/contacto">Contacto</Link>
             <Link href="/checkout">Cesta</Link>
           </div>
           <small>© 2026 Land of Nature · Origen natural</small>

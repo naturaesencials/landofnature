@@ -27,6 +27,24 @@ export async function submitAccountRequest(form: {
   return { ok: true };
 }
 
+export async function submitContactMessage(form: {
+  name?: string; email: string; phone?: string; subject?: string; message: string;
+}): Promise<ActionResult> {
+  if (!form.email || !String(form.email).trim()) return { ok: false, error: "El correo es obligatorio." };
+  if (!form.message || !String(form.message).trim()) return { ok: false, error: "Escribe tu mensaje." };
+  const supabase = createClient();
+  const { error } = await supabase.from("contact_messages").insert({
+    name: form.name?.trim() || null,
+    email: form.email.trim(),
+    phone: form.phone?.trim() || null,
+    subject: form.subject?.trim() || null,
+    message: form.message.trim(),
+    status: "new",
+  });
+  if (error) return { ok: false, error: "No se pudo enviar el mensaje. Inténtalo de nuevo." };
+  return { ok: true };
+}
+
 export async function createGuestOrder(payload: {
   email: string; name: string; phone: string; payment_method: "transfer" | "card";
   items: { product_id: string; qty: number }[];

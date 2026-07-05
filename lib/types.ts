@@ -16,6 +16,6 @@ export function stockState(p: { stock: number; low_stock_threshold: number }): S
 }
 export function stockLabel(p: { stock: number; low_stock_threshold: number }): string {
   const s = stockState(p);
-  return s === "out" ? "Agotado" : s === "low" ? `Últimas ${p.stock}` : "En stock";
+  return s === "out" ? "No disponible" : s === "low" ? `Últimas ${p.stock}` : "En stock";
 }
 export const euro = (n: number) => n.toFixed(2).replace(".", ",") + " €";
