@@ -5,8 +5,19 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 
 export const metadata: Metadata = {
-  title: "Land of Nature — Tienda",
+  metadataBase: new URL("https://www.landofnature.com"),
+  title: {
+    default: "Land of Nature — Cosmética y cuidado natural",
+    template: "%s · Land of Nature",
+  },
   description: "Cosmética y cuidado de origen natural. Compra como invitado o accede a tu tarifa profesional.",
+  openGraph: {
+    type: "website",
+    siteName: "Land of Nature",
+    locale: "es_ES",
+    images: ["/logo-full.png"],
+  },
+  robots: { index: true, follow: true },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

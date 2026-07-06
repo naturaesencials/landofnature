@@ -232,3 +232,11 @@ button{font-family:inherit}
 .notify .btn.cta{padding:10px 16px;white-space:nowrap}
 .notify-done{font-size:12.5px;color:var(--in);margin:8px 0 0;font-weight:500;font-family:var(--font-sans)}
 .notify-err{font-size:11.5px;color:var(--out);width:100%}
+
+/* Intro de ficha de producto (SEO + legibilidad) */
+.pdetail .pintro{
+  font-size:14px;
+  line-height:1.55;
+  color:var(--muted);
+  margin:2px 0 14px;
+}

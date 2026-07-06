@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { ContactForm } from "@/components/ui";
 
-export const metadata = { title: "Contacto · Land of Nature" };
+export const metadata = {
+  title: "Contacto",
+  description: "Contacta con Land of Nature: dudas sobre productos, composición (INCI), pedidos o alta como cliente profesional.",
+  alternates: { canonical: "https://www.landofnature.com/contacto" },
+};
 
 export default function ContactoPage() {
   return (
@@ -9,7 +13,7 @@ export default function ContactoPage() {
       <div className="wrap">
         <div className="acc-intro">
           <p className="eyebrow">Contacto</p>
-          <h2>¿Hablamos?</h2>
+          <h1>¿Hablamos?</h1>
           <p>Estamos aquí para ayudarte con productos, composición (INCI), pedidos o el alta como profesional. Escríbenos y te respondemos lo antes posible.</p>
           <ul className="acc-steps">
             <li><span>@</span><div><b>Correo</b><small>Rellena el formulario y te contestamos por correo.</small></div></li>

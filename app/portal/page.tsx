@@ -1,7 +1,13 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import Logout from "@/components/Logout";
 import { euro, stockState, stockLabel, type Product } from "@/lib/types";
+
+export const metadata: Metadata = {
+  title: "Portal profesional",
+  robots: { index: false, follow: false },
+};
 
 export const revalidate = 0;
 

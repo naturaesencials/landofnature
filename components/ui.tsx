@@ -59,15 +59,15 @@ export function ProductCard({ p }: { p: Product }) {
   const out = st === "out";
   return (
     <article className="pcard">
-      <Link href={`/producto/${p.slug}`} className="art" aria-label={p.name}>
+      <Link href={`/producto/${p.slug}`} className="art" aria-label={`${p.brand} ${p.name} · ${p.size}`}>
         <span className="tag">{p.category}</span>
         <span className={`chip ${st} stockpill`}><span className="d" />{stockLabel(p)}</span>
-        {p.image_url ? <img src={p.image_url} alt={p.name} className="pimg" loading="lazy" /> : <Bottle className="bottle" />}
+        {p.image_url ? <img src={p.image_url} alt={`${p.brand} ${p.name} · ${p.size}`} className="pimg" loading="lazy" /> : <Bottle className="bottle" />}
       </Link>
       <div className="pbody">
         <div className="cat">{p.brand} · {p.size}</div>
-        <Link href={`/producto/${p.slug}`}><h4>{p.name}</h4></Link>
-        <Link href={`/producto/${p.slug}`} className="info">Ver composición (INCI)</Link>
+        <Link href={`/producto/${p.slug}`} aria-label={`${p.brand} ${p.name} · ${p.size}`}><h4>{p.brand} {p.name}</h4></Link>
+        <Link href={`/producto/${p.slug}`} className="info" aria-label={`Ver composición INCI de ${p.brand} ${p.name} · ${p.size}`}>Ver composición (INCI)</Link>
         <div className="pfoot">
           <div className="price"><div className="lab">Precio caja · sin IVA</div><div className="v">{euro(p.public_price)}</div><div className="lab" style={{ marginTop: 2, opacity: .8 }}>+ IVA 21%</div></div>
           {!out && (

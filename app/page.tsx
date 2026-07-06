@@ -1,7 +1,19 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { ProductCard, AccountForm } from "@/components/ui";
 import type { Product } from "@/lib/types";
+
+export const metadata: Metadata = {
+  title: { absolute: "Land of Nature — Cosmética y cuidado natural artesanal" },
+  description: "Cosmética, higiene y detergencia de origen natural: Ubuntu, Uniku, Muntu, Shikoba y Hoop Natural. Compra como invitado sin cuenta o accede a tu tarifa profesional.",
+  alternates: { canonical: "https://www.landofnature.com/" },
+  openGraph: {
+    title: "Land of Nature — Cosmética y cuidado natural artesanal",
+    description: "Cosmética, higiene y detergencia de origen natural. Compra como invitado o accede a tu tarifa profesional.",
+    url: "https://www.landofnature.com/",
+  },
+};
 
 export const revalidate = 0;
 
