@@ -58,7 +58,7 @@ export async function submitContactMessage(form: {
 }
 
 export async function createGuestOrder(payload: {
-  email: string; name: string; phone: string; payment_method: "transfer" | "card";
+  email: string; name: string; phone: string; payment_method: string;
   items: { product_id: string; qty: number }[];
 }): Promise<ActionResult> {
   if (!payload.email?.trim()) return { ok: false, error: "El correo es obligatorio." };

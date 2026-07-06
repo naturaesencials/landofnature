@@ -240,3 +240,13 @@ button{font-family:inherit}
   color:var(--muted);
   margin:2px 0 14px;
 }
+/* ---------- selector de método de pago ---------- */
+.paylabel{font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin:18px 0 10px}
+.payopts{display:flex;flex-direction:column;gap:10px;margin-bottom:8px}
+.payopt{display:grid;grid-template-columns:22px 1fr;grid-template-rows:auto auto;column-gap:10px;align-items:center;
+  border:1px solid var(--line);border-radius:10px;padding:13px 15px;cursor:pointer;background:var(--card);transition:all .15s ease}
+.payopt:hover{border-color:var(--copper)}
+.payopt.on{border-color:var(--cta);background:var(--cream);box-shadow:inset 0 0 0 1px var(--cta)}
+.payopt input{grid-row:1 / span 2;width:18px;height:18px;accent-color:var(--cta);margin:0}
+.payopt .po-t{font-weight:600;color:var(--ink);font-size:14.5px}
+.payopt .po-s{grid-column:2;font-size:12px;color:var(--muted)}
