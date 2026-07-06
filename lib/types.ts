@@ -19,3 +19,19 @@ export function stockLabel(p: { stock: number; low_stock_threshold: number }): s
   return s === "out" ? "No disponible" : s === "low" ? `Últimas ${p.stock}` : "En stock";
 }
 export const euro = (n: number) => n.toFixed(2).replace(".", ",") + " €";
+
+// Formato de caja legible y claro, p. ej. "Caja · 6 botellas de 1 L"
+export function boxLabel(p: { size: string | null; units_per_box: number | null }): string {
+  const s = (p.size || "").toLowerCase();
+  const u = p.units_per_box;
+  let env = "";
+  if (/\b1\s*l\b/.test(s) || /\b1l\b/.test(s)) env = "botellas de 1 L";
+  else if (/300\s*ml/.test(s)) env = "botellas de 300 ml";
+  else if (/450\s*ml/.test(s)) env = "botellas de 450 ml";
+  else if (/bolsa/.test(s)) env = "bolsas dispensador";
+  else if (/(5\s*l).*(jerrican|garrafa)|jerrican|garrafa/.test(s)) env = "garrafas de 5 L";
+  else if (/bib/.test(s)) env = "BiB de 5 L";
+  if (u && env) return `Caja · ${u} ${env}`;
+  if (u) return `Caja · ${u} unidades`;
+  return p.size || "Caja";
+}

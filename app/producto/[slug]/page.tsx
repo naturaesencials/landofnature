@@ -6,7 +6,7 @@ import { createClient as createPublicClient } from "@supabase/supabase-js";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/supabase/config";
 import { Bottle } from "@/components/ui";
 import ProductBuy from "@/components/ProductBuy";
-import { euro, stockState, stockLabel, vatOf, withVat, type Product } from "@/lib/types";
+import { euro, stockState, stockLabel, boxLabel, vatOf, withVat, type Product } from "@/lib/types";
 
 export const revalidate = 0;
 
@@ -68,6 +68,10 @@ export default async function ProductPage({ params }: { params: { slug: string }
           <div>
             <div className="cat">{p.family ? `${p.family} · ` : ""}{p.category}</div>
             <h1>{p.brand} {p.name}</h1>
+            <div className="fmt-badge fmt-lg" aria-label={boxLabel(p)}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z" /><path d="M3 7.5 12 12l9-4.5M12 12v9" /></svg>
+              <span>{boxLabel(p)}</span>
+            </div>
             <div className="sku">SKU {p.sku} · {p.size} · <span className={`chip ${st}`} style={{ background: "transparent", padding: 0 }}><span className="d" />{stockLabel(p)}</span></div>
             <p className="pintro">{p.brand} {p.name} — {p.category} de origen natural{p.family ? ` · ${p.family}` : ""}. Disponible en formato {p.size}.</p>
             {p.description && <p className="desc">{p.description}</p>}
@@ -84,7 +88,7 @@ export default async function ProductPage({ params }: { params: { slug: string }
                 <div className="lab" style={{ marginTop: 4 }}>
                   + IVA {Math.round(p.vat_rate * 100)}% ({euro(vatOf(p.public_price, p.vat_rate))}) · <strong>{euro(withVat(p.public_price, p.vat_rate))}</strong> con IVA
                 </div>
-                {p.units_per_box ? <div className="lab" style={{ marginTop: 2, opacity: .8 }}>Caja de {p.units_per_box} uds · venta solo por caja</div> : null}
+                {p.units_per_box ? <div className="lab" style={{ marginTop: 2, opacity: .8 }}>{boxLabel(p)} · venta solo por caja</div> : null}
               </div>
             </div>
             <div style={{ marginTop: 16 }}><ProductBuy p={p} /></div>

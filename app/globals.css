@@ -135,6 +135,12 @@ button{font-family:inherit}
 .success h3{font-family:var(--font-serif);font-weight:600;font-size:24px;margin:0 0 6px}
 .success p{color:var(--muted);font-size:14px;margin:0}
 
+/* ---------- etiqueta de formato (caja) ---------- */
+.fmt-badge{display:inline-flex;align-items:center;gap:7px;margin:3px 0 9px;padding:6px 12px;border-radius:999px;background:rgba(85,99,47,.10);border:1px solid rgba(85,99,47,.22);color:var(--olive);font-family:var(--font-sans);font-weight:600;font-size:12.5px;line-height:1}
+.fmt-badge svg{width:16px;height:16px;flex:0 0 auto}
+.fmt-lg{font-size:15px;padding:9px 16px;gap:9px;margin:12px 0 14px}
+.fmt-lg svg{width:20px;height:20px}
+
 /* ---------- footer ---------- */
 .site-footer{background:var(--espresso);color:#C9D0B4}
 .site-footer .wrap{padding:38px 26px;display:flex;justify-content:space-between;gap:22px;flex-wrap:wrap;align-items:center}

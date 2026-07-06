@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { euro, stockState, stockLabel, type Product } from "@/lib/types";
+import { euro, stockState, stockLabel, boxLabel, type Product } from "@/lib/types";
 import { submitAccountRequest, submitContactMessage, subscribeStock } from "@/lib/actions";
 
 /* ---------------- Carrito ---------------- */
@@ -67,6 +67,10 @@ export function ProductCard({ p }: { p: Product }) {
       <div className="pbody">
         <div className="cat">{p.brand} · {p.size}</div>
         <Link href={`/producto/${p.slug}`} aria-label={`${p.brand} ${p.name} · ${p.size}`}><h4>{p.brand} {p.name}</h4></Link>
+        <div className="fmt-badge" aria-label={boxLabel(p)}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z" /><path d="M3 7.5 12 12l9-4.5M12 12v9" /></svg>
+          <span>{boxLabel(p)}</span>
+        </div>
         <Link href={`/producto/${p.slug}`} className="info" aria-label={`Ver composición INCI de ${p.brand} ${p.name} · ${p.size}`}>Ver composición (INCI)</Link>
         <div className="pfoot">
           <div className="price"><div className="lab">Precio caja · sin IVA</div><div className="v">{euro(p.public_price)}</div><div className="lab" style={{ marginTop: 2, opacity: .8 }}>+ IVA 21%</div></div>
