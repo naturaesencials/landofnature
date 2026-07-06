@@ -1,10 +1,11 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useCart, Bottle } from "@/components/ui";
 import { createGuestOrder } from "@/lib/actions";
 import { euro, vatOf, withVat } from "@/lib/types";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/supabase/config";
+import { createClient } from "@/lib/supabase/client";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 declare global { interface Window { RevolutCheckout?: any } }
@@ -37,10 +38,15 @@ async function createRevolutOrder(orderNo: number) {
 export default function CheckoutPage() {
   const { lines, subtotal, setQty, clear } = useCart();
   const [method, setMethod] = useState<Method>("revolut");
+  const [isClient, setIsClient] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [done, setDone] = useState<{ orderNo: number; total: number } | null>(null);
   const [paid, setPaid] = useState<{ orderNo: number; total: number } | null>(null);
+
+  useEffect(() => {
+    createClient().auth.getUser().then(({ data }) => setIsClient(!!data.user)).catch(() => {});
+  }, []);
 
   async function pay(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -166,11 +172,13 @@ export default function CheckoutPage() {
                 <span className="po-t">Revolut Pay</span>
                 <span className="po-s">Paga con tu cuenta Revolut</span>
               </label>
-              <label className={`payopt ${method === "transfer" ? "on" : ""}`}>
-                <input type="radio" name="pm" checked={method === "transfer"} onChange={() => setMethod("transfer")} />
-                <span className="po-t">Transferencia bancaria</span>
-                <span className="po-s">Te damos el IBAN al confirmar</span>
-              </label>
+              {isClient && (
+                <label className={`payopt ${method === "transfer" ? "on" : ""}`}>
+                  <input type="radio" name="pm" checked={method === "transfer"} onChange={() => setMethod("transfer")} />
+                  <span className="po-t">Transferencia bancaria</span>
+                  <span className="po-s">Te damos el IBAN al confirmar</span>
+                </label>
+              )}
             </div>
 
             <div className="guestnote">🔒 <div><b>Pago seguro.</b> Los pagos con tarjeta se procesan por Revolut con 3D Secure. No se crea ninguna cuenta.</div></div>
