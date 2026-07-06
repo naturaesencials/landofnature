@@ -4,7 +4,7 @@ export default function Footer() {
     <footer className="site-footer">
       <div className="wrap">
         <div className="fbrand">
-          <img src="/mark.png" alt="Land of Nature" />
+          <img src="/brand-cream.png" alt="Land of Nature" />
           <span><b>Land of Nature</b><i>Transformando Positivamente</i></span>
         </div>
         <div className="fmeta">
