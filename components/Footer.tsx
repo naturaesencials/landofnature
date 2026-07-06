@@ -3,7 +3,10 @@ export default function Footer() {
   return (
     <footer className="site-footer">
       <div className="wrap">
-        <img src="/logo-cream.png" alt="Land of Nature — Innovando Naturalmente" />
+        <div className="fbrand">
+          <img src="/mark.png" alt="Land of Nature" />
+          <span><b>Land of Nature</b><i>Transformando Positivamente</i></span>
+        </div>
         <div className="fmeta">
           <div className="fl">
             <Link href="/#cuenta">Crear cuenta</Link>
