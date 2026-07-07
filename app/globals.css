@@ -177,7 +177,8 @@ button{font-family:inherit}
 
 /* ---------- product detail ---------- */
 .pdetail{padding:44px 0 70px}
-.pdetail .grid2{display:grid;grid-template-columns:1fr 1.1fr;gap:44px}
+.pdetail .grid2{display:grid;grid-template-columns:1fr 1.1fr;gap:44px;align-items:start}
+.pdetail .grid2>div{min-width:0}
 @media(max-width:760px){.pdetail .grid2{grid-template-columns:1fr;gap:28px}}
 .pdetail .big{aspect-ratio:1/1;background:linear-gradient(160deg,#E8ECD9,#D9DFC5);border:1px solid var(--line);border-radius:6px;display:flex;align-items:center;justify-content:center}
 .pdetail .big .bottle{width:40%;color:var(--copper-d)}
