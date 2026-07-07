@@ -1,28 +1,31 @@
 "use client";
 import { useState, Fragment } from "react";
 import { euro, boxLabel } from "@/lib/types";
-import { adminUpdateProduct, adminUpdateOrderStatus, adminUpdateRequest } from "@/app/admin/actions";
+import { adminUpdateProduct, adminUpdateOrderStatus, adminUpdateRequest, adminSetAgreement } from "@/app/admin/actions";
 
 type Prod = { id: string; brand: string; name: string; size: string | null; sku: string; public_price: number; stock: number; active: boolean; units_per_box: number | null; family: string | null; category: string };
 type OrderItem = { name_snapshot: string; qty: number; unit_price: number };
 type Order = { id: string; order_no: number; created_at: string; name: string | null; email: string | null; phone: string | null; address: string | null; postal_code: string | null; city: string | null; province: string | null; country: string | null; payment_method: string | null; status: string; total: number; order_items: OrderItem[] };
 type Req = { id: string; contact_name: string | null; company: string | null; cif: string | null; business_type: string | null; email: string | null; phone: string | null; message: string | null; status: string; created_at: string };
+type Client = { id: string; full_name: string | null; company: string | null; cif: string | null; phone: string | null; tariff_code: string | null; status: string | null; commercial_agreement: boolean; gc_mandate_status: string | null; created_at: string };
 
 const fdate = (s: string) => new Date(s).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" });
 const ORDER_STATES: Record<string, string> = { pending_payment: "Pendiente de pago", paid: "Pagado", shipped: "Enviado", cancelled: "Cancelado" };
 
-export default function AdminPanel({ products, orders, requests }: { products: Prod[]; orders: Order[]; requests: Req[] }) {
+export default function AdminPanel({ products, orders, requests, clients }: { products: Prod[]; orders: Order[]; requests: Req[]; clients: Client[] }) {
   const pendingReq = requests.filter((r) => r.status === "pending").length;
-  const [tab, setTab] = useState<"productos" | "pedidos" | "solicitudes">("productos");
+  const [tab, setTab] = useState<"productos" | "pedidos" | "solicitudes" | "clientes">("productos");
   return (
     <div>
       <div className="adm-tabs">
         <button className={tab === "productos" ? "on" : ""} onClick={() => setTab("productos")}>Productos <span>{products.length}</span></button>
         <button className={tab === "pedidos" ? "on" : ""} onClick={() => setTab("pedidos")}>Pedidos <span>{orders.length}</span></button>
+        <button className={tab === "clientes" ? "on" : ""} onClick={() => setTab("clientes")}>Clientes <span>{clients.length}</span></button>
         <button className={tab === "solicitudes" ? "on" : ""} onClick={() => setTab("solicitudes")}>Solicitudes {pendingReq > 0 && <span className="alert">{pendingReq}</span>}</button>
       </div>
       {tab === "productos" && <Productos products={products} />}
       {tab === "pedidos" && <Pedidos orders={orders} />}
+      {tab === "clientes" && <Clientes clients={clients} />}
       {tab === "solicitudes" && <Solicitudes requests={requests} />}
     </div>
   );
@@ -160,6 +163,39 @@ function Solicitudes({ requests }: { requests: Req[] }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/* ---------------- Clientes ---------------- */
+function Clientes({ clients }: { clients: Client[] }) {
+  const [rows, setRows] = useState(() => clients.map((c) => ({ ...c, _busy: false })));
+  async function toggle(id: string, value: boolean) {
+    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, _busy: true } : r)));
+    const res = await adminSetAgreement({ id, value });
+    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, commercial_agreement: res.ok ? value : r.commercial_agreement, _busy: false } : r)));
+  }
+  const mandate = (s: string | null) => s === "active" ? <span className="adm-chip ok">Activa</span> : s ? <span className="adm-chip pend">{s}</span> : <span className="adm-chip no">Sin mandato</span>;
+  if (rows.length === 0) return <p className="adm-empty">No hay clientes registrados.</p>;
+  return (
+    <div>
+      <p className="adm-hint" style={{ marginBottom: 12 }}>Activa el <b>acuerdo comercial</b> para permitir a un cliente pagar por domiciliación bancaria (SEPA/GoCardless). El cliente deberá luego autorizar el mandato desde su portal.</p>
+      <div className="adm-tablewrap">
+        <table className="adm-table">
+          <thead><tr><th>Cliente</th><th>CIF</th><th>Tarifa</th><th className="c">Acuerdo comercial</th><th className="c">Domiciliación</th></tr></thead>
+          <tbody>
+            {rows.map((c) => (
+              <tr key={c.id}>
+                <td><b>{c.company || c.full_name || "—"}</b><span className="sub">{c.full_name}{c.phone ? " · " + c.phone : ""}</span></td>
+                <td className="mono">{c.cif || "—"}</td>
+                <td className="c">{c.tariff_code || "—"}</td>
+                <td className="c"><label className="adm-switch"><input type="checkbox" checked={c.commercial_agreement} disabled={c._busy} onChange={(e) => toggle(c.id, e.target.checked)} /><span /></label></td>
+                <td className="c">{mandate(c.gc_mandate_status)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

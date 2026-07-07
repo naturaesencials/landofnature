@@ -10,7 +10,7 @@ import { createClient } from "@/lib/supabase/client";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 declare global { interface Window { RevolutCheckout?: any } }
 
-type Method = "revolut" | "revolut_pay" | "transfer";
+type Method = "revolut" | "revolut_pay" | "transfer" | "gocardless";
 
 function loadRevolut(env: string): Promise<any> {
   const src = env === "production"
@@ -39,13 +39,21 @@ export default function CheckoutPage() {
   const { lines, subtotal, setQty, clear } = useCart();
   const [method, setMethod] = useState<Method>("revolut");
   const [isClient, setIsClient] = useState(false);
+  const [canDD, setCanDD] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [done, setDone] = useState<{ orderNo: number; total: number } | null>(null);
+  const [ddDone, setDdDone] = useState<{ orderNo: number; total: number } | null>(null);
   const [paid, setPaid] = useState<{ orderNo: number; total: number } | null>(null);
 
   useEffect(() => {
-    createClient().auth.getUser().then(({ data }) => setIsClient(!!data.user)).catch(() => {});
+    const sb = createClient();
+    sb.auth.getUser().then(async ({ data }) => {
+      if (!data.user) return;
+      setIsClient(true);
+      const { data: p } = await sb.from("profiles").select("commercial_agreement, gc_mandate_status").eq("id", data.user.id).maybeSingle();
+      if (p?.commercial_agreement && p?.gc_mandate_status === "active") setCanDD(true);
+    }).catch(() => {});
   }, []);
 
   async function pay(e: React.FormEvent<HTMLFormElement>) {
@@ -73,6 +81,22 @@ export default function CheckoutPage() {
 
     // Transferencia: mostramos los datos bancarios
     if (method === "transfer") { setBusy(false); clear(); setDone({ orderNo, total }); return; }
+
+    // Domiciliación bancaria (GoCardless)
+    if (method === "gocardless") {
+      try {
+        const { data: sess } = await createClient().auth.getSession();
+        const token = sess.session?.access_token || "";
+        const r = await fetch(`${SUPABASE_URL}/functions/v1/gocardless-charge`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}`, "apikey": SUPABASE_ANON_KEY },
+          body: JSON.stringify({ order_no: orderNo }),
+        });
+        const d = await r.json();
+        if (!r.ok || d.error) { setBusy(false); setErr(d.error || "No se pudo iniciar la domiciliación."); return; }
+        setBusy(false); clear(); setDdDone({ orderNo, total }); return;
+      } catch { setBusy(false); setErr("No se pudo iniciar la domiciliación."); return; }
+    }
 
     // Tarjeta / Revolut Pay: creamos el pedido en Revolut
     try {
@@ -106,6 +130,19 @@ export default function CheckoutPage() {
           <div className="ring">✓</div>
           <h3>Pago recibido — pedido nº {paid.orderNo}</h3>
           <p>Gracias por tu compra. Hemos recibido tu pago de <b>{euro(paid.total)}</b> y te hemos enviado la confirmación por correo. Estamos preparando tu envío.</p>
+        </div>
+        <div style={{ marginTop: 18 }}><Link href="/#tienda" className="btn line">Seguir comprando</Link></div>
+      </div>
+    </div></section>
+  );
+
+  if (ddDone) return (
+    <section className="page"><div className="wrap">
+      <div className="panel" style={{ maxWidth: 560 }}>
+        <div className="success">
+          <div className="ring">✓</div>
+          <h3>Pedido registrado — nº {ddDone.orderNo}</h3>
+          <p>Tu pedido de <b>{euro(ddDone.total)}</b> se cobrará por <b>domiciliación bancaria</b> en la cuenta asociada a tu mandato SEPA. Recibirás la confirmación por correo cuando se complete el cargo, y prepararemos tu envío.</p>
         </div>
         <div style={{ marginTop: 18 }}><Link href="/#tienda" className="btn line">Seguir comprando</Link></div>
       </div>
@@ -197,12 +234,19 @@ export default function CheckoutPage() {
                   <span className="po-s">Te damos el IBAN al confirmar</span>
                 </label>
               )}
+              {canDD && (
+                <label className={`payopt ${method === "gocardless" ? "on" : ""}`}>
+                  <input type="radio" name="pm" checked={method === "gocardless"} onChange={() => setMethod("gocardless")} />
+                  <span className="po-t">Domiciliación bancaria</span>
+                  <span className="po-s">Adeudo directo SEPA · acuerdo comercial</span>
+                </label>
+              )}
             </div>
 
             <div className="guestnote">🔒 <div><b>Pago seguro.</b> Los pagos con tarjeta se procesan por Revolut con 3D Secure. No se crea ninguna cuenta.</div></div>
             {err && <p className="formerr">{err}</p>}
             <button className="btn cta full" disabled={busy}>
-              {busy ? "Procesando…" : method === "transfer" ? `Confirmar pedido · ${euro(withVat(subtotal))}` : `Pagar ${euro(withVat(subtotal))}`}
+              {busy ? "Procesando…" : (method === "transfer" || method === "gocardless") ? `Confirmar pedido · ${euro(withVat(subtotal))}` : `Pagar ${euro(withVat(subtotal))}`}
             </button>
           </form>
         </div>

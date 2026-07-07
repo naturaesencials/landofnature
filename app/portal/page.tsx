@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -34,7 +35,10 @@ export default async function Portal() {
           <h1>Portal profesional</h1>
           <p className="lead">{profile?.company ? `${profile.company} · ` : ""}{tariff ? <span className="tprice-badge">● Tu tarifa: {tariff}</span> : "Cuenta pendiente de asignar tarifa."}</p>
         </div>
-        <Logout />
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <Link href="/portal/domiciliacion" className="btn line">Domiciliación bancaria</Link>
+          <Logout />
+        </div>
       </div>
 
       {!profile && (
