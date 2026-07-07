@@ -58,6 +58,7 @@ export default async function ProductPage({ params }: { params: { slug: string }
   if (!data) notFound();
   const p = data as Product;
   const st = stockState(p);
+  const unpriced = !p.public_price || p.public_price <= 0;
 
   return (
     <section className="pdetail">
@@ -82,16 +83,26 @@ export default async function ProductPage({ params }: { params: { slug: string }
             </div>
 
             <div className="buyblock">
-              <div className="price">
-                <div className="lab">Precio por caja · sin IVA</div>
-                <div className="v">{euro(p.public_price)}</div>
-                <div className="lab" style={{ marginTop: 4 }}>
-                  + IVA {Math.round(p.vat_rate * 100)}% ({euro(vatOf(p.public_price, p.vat_rate))}) · <strong>{euro(withVat(p.public_price, p.vat_rate))}</strong> con IVA
+              {unpriced ? (
+                <div className="price">
+                  <div className="lab">Precio</div>
+                  <div className="v" style={{ color: "var(--muted)" }}>Próximamente</div>
+                  <div className="lab" style={{ marginTop: 4, opacity: .8 }}>Producto en catálogo · precio por confirmar</div>
                 </div>
-                {p.units_per_box ? <div className="lab" style={{ marginTop: 2, opacity: .8 }}>{boxLabel(p)} · venta solo por caja</div> : null}
-              </div>
+              ) : (
+                <div className="price">
+                  <div className="lab">Precio por caja · sin IVA</div>
+                  <div className="v">{euro(p.public_price)}</div>
+                  <div className="lab" style={{ marginTop: 4 }}>
+                    + IVA {Math.round(p.vat_rate * 100)}% ({euro(vatOf(p.public_price, p.vat_rate))}) · <strong>{euro(withVat(p.public_price, p.vat_rate))}</strong> con IVA
+                  </div>
+                  {p.units_per_box ? <div className="lab" style={{ marginTop: 2, opacity: .8 }}>{boxLabel(p)} · venta solo por caja</div> : null}
+                </div>
+              )}
             </div>
-            <div style={{ marginTop: 16 }}><ProductBuy p={p} /></div>
+            {unpriced
+              ? <div style={{ marginTop: 16, fontSize: 13.5, color: "var(--muted)", maxWidth: 420 }}>Este producto estará disponible próximamente. Estamos actualizando su precio y disponibilidad.</div>
+              : <div style={{ marginTop: 16 }}><ProductBuy p={p} /></div>}
           </div>
         </div>
       </div>

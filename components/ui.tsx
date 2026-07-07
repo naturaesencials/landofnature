@@ -56,7 +56,8 @@ export function ProductCard({ p }: { p: Product }) {
   const { add } = useCart();
   const router = useRouter();
   const st = stockState(p);
-  const out = st === "out";
+  const unpriced = !p.public_price || p.public_price <= 0;
+  const out = st === "out" || unpriced;
   return (
     <article className="pcard">
       <Link href={`/producto/${p.slug}`} className="art" aria-label={`${p.brand} ${p.name} · ${p.size}`}>
@@ -73,7 +74,9 @@ export function ProductCard({ p }: { p: Product }) {
         </div>
         <Link href={`/producto/${p.slug}`} className="info" aria-label={`Ver composición INCI de ${p.brand} ${p.name} · ${p.size}`}>Ver composición (INCI)</Link>
         <div className="pfoot">
-          <div className="price"><div className="lab">Precio caja · sin IVA</div><div className="v">{euro(p.public_price)}</div><div className="lab" style={{ marginTop: 2, opacity: .8 }}>+ IVA 21%</div></div>
+          <div className="price">{unpriced
+            ? <><div className="lab">Precio</div><div className="v" style={{ fontSize: 16, color: "var(--muted)" }}>Próximamente</div></>
+            : <><div className="lab">Precio caja · sin IVA</div><div className="v">{euro(p.public_price)}</div><div className="lab" style={{ marginTop: 2, opacity: .8 }}>+ IVA 21%</div></>}</div>
           {!out && (
             <div className="buyrow">
               <button className="icon-add" aria-label="Añadir" onClick={() => add(p, 1)}>+</button>
