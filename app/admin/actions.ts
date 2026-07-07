@@ -53,3 +53,11 @@ export async function adminSetAgreement(input: { id: string; value: boolean }): 
   if (error) return { ok: false, error: error.message };
   return { ok: true };
 }
+
+export async function adminSetTransfer(input: { id: string; value: boolean }): Promise<Res> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const { error } = await supabase.from("profiles").update({ allow_transfer: input.value }).eq("id", input.id);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}

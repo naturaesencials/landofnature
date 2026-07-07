@@ -38,7 +38,7 @@ async function createRevolutOrder(orderNo: number) {
 export default function CheckoutPage() {
   const { lines, subtotal, setQty, clear } = useCart();
   const [method, setMethod] = useState<Method>("revolut");
-  const [isClient, setIsClient] = useState(false);
+  const [allowTransfer, setAllowTransfer] = useState(false);
   const [canDD, setCanDD] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -50,8 +50,8 @@ export default function CheckoutPage() {
     const sb = createClient();
     sb.auth.getUser().then(async ({ data }) => {
       if (!data.user) return;
-      setIsClient(true);
-      const { data: p } = await sb.from("profiles").select("commercial_agreement, gc_mandate_status").eq("id", data.user.id).maybeSingle();
+      const { data: p } = await sb.from("profiles").select("allow_transfer, commercial_agreement, gc_mandate_status").eq("id", data.user.id).maybeSingle();
+      if (p?.allow_transfer) setAllowTransfer(true);
       if (p?.commercial_agreement && p?.gc_mandate_status === "active") setCanDD(true);
     }).catch(() => {});
   }, []);
@@ -227,7 +227,7 @@ export default function CheckoutPage() {
                 <span className="po-t">Revolut Pay</span>
                 <span className="po-s">Paga con tu cuenta Revolut</span>
               </label>
-              {isClient && (
+              {allowTransfer && (
                 <label className={`payopt ${method === "transfer" ? "on" : ""}`}>
                   <input type="radio" name="pm" checked={method === "transfer"} onChange={() => setMethod("transfer")} />
                   <span className="po-t">Transferencia bancaria</span>
