@@ -41,6 +41,8 @@ button{font-family:inherit}
 
 /* forms */
 .field{margin-bottom:13px}
+.field2{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+@media(max-width:520px){.field2{grid-template-columns:1fr}}
 .field label{font-family:var(--font-mono),monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px}
 .field input,.field select,.field textarea{width:100%;padding:12px 13px;border:1px solid var(--line);border-radius:3px;background:#fff;font-size:14px;font-family:var(--font-sans),sans-serif;color:var(--ink)}
 .field textarea{resize:vertical;min-height:74px}

@@ -55,11 +55,17 @@ export default function CheckoutPage() {
     const email = f.get("email") as string;
     const name = f.get("name") as string;
     const phone = f.get("phone") as string;
+    const address = f.get("address") as string;
+    const postal_code = f.get("postal_code") as string;
+    const city = f.get("city") as string;
+    const province = f.get("province") as string;
+    const country = ((f.get("country") as string) || "España").trim();
     const total = withVat(subtotal);
     setBusy(true);
 
     const res = await createGuestOrder({
-      email, name, phone, payment_method: method,
+      email, name, phone, address, postal_code, city, province, country,
+      payment_method: method,
       items: lines.map((l) => ({ product_id: l.product_id, qty: l.qty })),
     });
     if (!res.ok || !res.orderNo) { setBusy(false); setErr(res.error || "No se pudo crear el pedido."); return; }
@@ -155,10 +161,22 @@ export default function CheckoutPage() {
           </div>
 
           <form className="panel" onSubmit={pay}>
-            <h3 className="serif" style={{ margin: "0 0 14px", fontSize: 20 }}>Datos y pago</h3>
-            <div className="field"><label>Correo (para el recibo) *</label><input name="email" type="email" required placeholder="tu@correo.com" /></div>
-            <div className="field"><label>Nombre</label><input name="name" placeholder="Nombre y apellidos" /></div>
-            <div className="field"><label>Teléfono</label><input name="phone" placeholder="+34 600 000 000" /></div>
+            <h3 className="serif" style={{ margin: "0 0 4px", fontSize: 20 }}>Datos de envío</h3>
+            <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--muted)" }}>Todos los campos son obligatorios para poder enviarte el pedido.</p>
+            <div className="field"><label>Nombre y apellidos *</label><input name="name" required placeholder="Nombre y apellidos" /></div>
+            <div className="field"><label>Dirección completa (calle, número, piso, puerta) *</label><input name="address" required placeholder="Calle, número, piso, puerta" /></div>
+            <div className="field2">
+              <div className="field"><label>Código postal *</label><input name="postal_code" required inputMode="numeric" placeholder="29670" /></div>
+              <div className="field"><label>Población *</label><input name="city" required placeholder="Ciudad / población" /></div>
+            </div>
+            <div className="field2">
+              <div className="field"><label>Provincia *</label><input name="province" required placeholder="Provincia" /></div>
+              <div className="field"><label>País *</label><input name="country" required defaultValue="España" /></div>
+            </div>
+            <div className="field2">
+              <div className="field"><label>Correo electrónico *</label><input name="email" type="email" required placeholder="tu@correo.com" /></div>
+              <div className="field"><label>Teléfono móvil *</label><input name="phone" type="tel" required inputMode="tel" placeholder="+34 600 000 000" /></div>
+            </div>
 
             <div className="paylabel">Método de pago</div>
             <div className="payopts">

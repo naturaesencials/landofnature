@@ -59,15 +59,24 @@ export async function submitContactMessage(form: {
 
 export async function createGuestOrder(payload: {
   email: string; name: string; phone: string; payment_method: string;
+  address: string; postal_code: string; city: string; province: string; country?: string;
   items: { product_id: string; qty: number }[];
 }): Promise<ActionResult> {
   if (!payload.email?.trim()) return { ok: false, error: "El correo es obligatorio." };
+  if (!payload.phone?.trim()) return { ok: false, error: "El teléfono móvil es obligatorio." };
+  if (!payload.address?.trim() || !payload.postal_code?.trim() || !payload.city?.trim())
+    return { ok: false, error: "La dirección de envío completa es obligatoria." };
   if (!payload.items?.length) return { ok: false, error: "El carrito está vacío." };
   const supabase = createClient();
   const { data, error } = await supabase.rpc("create_guest_order", {
     p_email: payload.email.trim(),
     p_name: payload.name?.trim() || "",
-    p_phone: payload.phone?.trim() || "",
+    p_phone: payload.phone.trim(),
+    p_address: payload.address.trim(),
+    p_postal_code: payload.postal_code.trim(),
+    p_city: payload.city.trim(),
+    p_province: payload.province?.trim() || "",
+    p_country: payload.country?.trim() || "España",
     p_payment_method: payload.payment_method,
     p_items: payload.items,
   });
