@@ -14,7 +14,12 @@ export default function Footer() {
             <Link href="/contacto">Contacto</Link>
             <Link href="/checkout">Cesta</Link>
           </div>
-          <small>© 2026 Land of Nature · Origen natural</small>
+          <div className="fl fl-legal">
+            <Link href="/terminos">Términos y condiciones</Link>
+            <Link href="/privacidad">Aviso legal y privacidad</Link>
+            <Link href="/privacidad#cookies">Cookies</Link>
+          </div>
+          <small>© 2026 Land of Nature · Origen natural · CIF B05422639</small>
         </div>
       </div>
     </footer>

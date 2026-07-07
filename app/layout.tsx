@@ -3,6 +3,7 @@ import "./globals.css";
 import { CartProvider, WhatsAppWidget } from "@/components/ui";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+import CookieBanner from "@/components/CookieBanner";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.landofnature.com"),
@@ -40,6 +41,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <main>{children}</main>
           <Footer />
           <WhatsAppWidget />
+          <CookieBanner />
         </CartProvider>
       </body>
     </html>

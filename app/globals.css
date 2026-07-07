@@ -304,3 +304,26 @@ button{font-family:inherit}
 .adm-chip.pend{background:rgba(255,180,60,.16);color:#8a5a00}
 .adm-chip.ok{background:rgba(85,99,47,.14);color:var(--olive)}
 .adm-chip.no{background:rgba(192,73,47,.12);color:#c0492f}
+
+/* ---------- páginas legales ---------- */
+.legal{max-width:760px;font-size:15px;line-height:1.75;color:var(--ink)}
+.legal h2{font-family:var(--font-serif);font-weight:500;font-size:22px;margin:34px 0 10px;color:var(--olive);scroll-margin-top:90px}
+.legal h3{font-family:var(--font-sans);font-weight:600;font-size:16px;margin:22px 0 6px;color:var(--ink)}
+.legal p{margin:0 0 13px}
+.legal ul{margin:0 0 14px;padding-left:20px}
+.legal li{margin:5px 0}
+.legal a{color:var(--olive);text-decoration:underline;text-underline-offset:2px}
+.legal strong{color:var(--ink)}
+.legal hr{border:0;border-top:1px solid var(--line);margin:26px 0}
+
+/* ---------- banner de cookies ---------- */
+.cookie-banner{position:fixed;left:16px;right:16px;bottom:16px;z-index:60;max-width:760px;margin:0 auto;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 50px -18px rgba(0,0,0,.35);padding:18px 20px;display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+.cookie-banner p{margin:0;font-size:13.5px;line-height:1.6;color:var(--ink);flex:1;min-width:240px}
+.cookie-banner a{color:var(--olive);text-decoration:underline;text-underline-offset:2px}
+.cookie-banner .cb-actions{display:flex;gap:10px;flex-wrap:wrap}
+.cookie-banner button{border-radius:6px;padding:10px 18px;font-size:13.5px;font-weight:600;cursor:pointer;font-family:var(--font-sans)}
+.cookie-banner .cb-acc{border:1px solid var(--olive);background:var(--olive);color:var(--cream)}
+.cookie-banner .cb-rej{border:1px solid var(--line);background:#fff;color:var(--muted)}
+@media(max-width:520px){.cookie-banner{padding:16px}.cookie-banner .cb-actions{width:100%}.cookie-banner .cb-actions button{flex:1}}
+.fl-legal{margin-top:4px}
+.fl-legal a{font-size:12px;opacity:.85}
