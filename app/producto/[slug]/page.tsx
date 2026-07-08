@@ -14,9 +14,17 @@ const SITE = "https://www.landofnature.com";
 
 function shortSize(s: string | null | undefined): string {
   if (!s) return "";
-  const m = s.match(/(\d[\d.,]*\s?(?:mL|ml|L|g|kg))/);
-  if (m) return m[1].replace(/\s?ml/i, " mL").replace(/\s+/g, " ").trim();
-  return s.replace(/^Caja\s*/i, "").trim();
+  const mult = (s.match(/(\d+)\s*[×xX]/) || [])[1];
+  let core: string;
+  let m = s.match(/(\d[\d.,]*)\s?(mL|ml|L|l|g|kg)\b/);
+  if (m) core = `${m[1]} ${m[2].toLowerCase() === "ml" ? "mL" : m[2].toUpperCase()}`;
+  else {
+    m = s.match(/carga\s*([\d.,]+)/i);
+    if (m) core = `recarga ${m[1]}`;
+    else if (/jerric/i.test(s)) core = "jerrican";
+    else core = s.replace(/^Caja\s*/i, "").replace(/\s+/g, " ").trim().slice(0, 16);
+  }
+  return mult ? `${mult}× ${core}` : core;
 }
 
 export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
@@ -34,16 +42,27 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   };
   const url = `${SITE}/producto/${p.slug}`;
   const sz = shortSize(p.size);
-  const title = `${p.brand} ${p.name}${sz ? " " + sz : ""}`.replace(/\s+/g, " ").trim();
-  const raw = (p.description || `${p.brand} ${p.name}, ${p.category} de origen natural.`).replace(/\s+/g, " ").trim();
-  const clip = raw.length > 150 ? raw.slice(0, 150).replace(/[\s,;.]+\S*$/, "") + "…" : raw;
-  const description = `${clip} · Formato ${p.size}.`.slice(0, 300);
+
+  // Título único por variante, con tope de longitud (~60 car.)
+  let base = `${p.brand} ${p.name}${sz ? " " + sz : ""}`.replace(/\s+/g, " ").trim();
+  if (base.length > 62) base = base.slice(0, 59).trim() + "…";
+  const withSuffix = `${base} · Land of Nature`;
+  const title = withSuffix.length <= 60 ? withSuffix : base;
+
+  // Descripción única (prefijo marca+nombre+talla) acotada a 120-155 car.
+  const clean = (p.description || `${p.category} de origen natural de ${p.brand}.`).replace(/\s+/g, " ").trim();
+  const prefix = `${p.brand} ${p.name}${sz ? " " + sz : ""}`.replace(/\s+/g, " ").trim();
+  let description = `${prefix} — ${clean}`;
+  if (description.length > 155) description = description.slice(0, 152).replace(/[\s,;.:–—-]+\S*$/, "") + "…";
+  else if (description.length < 90) description = `${description} Cosmética y cuidado natural en Land of Nature.`;
+  description = description.slice(0, 158);
+
   return {
-    title,
+    title: { absolute: title },
     description,
     alternates: { canonical: url },
     openGraph: {
-      title: `${title} · Land of Nature`,
+      title,
       description,
       url,
       type: "website",
@@ -68,7 +87,7 @@ export default async function ProductPage({ params }: { params: { slug: string }
           <div className="big">{p.image_url ? <img src={p.image_url} alt={p.name} className="pimg" /> : <Bottle className="bottle" />}</div>
           <div>
             <div className="cat">{p.family ? `${p.family} · ` : ""}{p.category}</div>
-            <h1>{p.brand} {p.name}</h1>
+            <h1>{p.brand} {p.name} · {p.size}</h1>
             <div className="fmt-badge fmt-lg" aria-label={boxLabel(p)}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z" /><path d="M3 7.5 12 12l9-4.5M12 12v9" /></svg>
               <span>{boxLabel(p)}</span>

@@ -8,7 +8,7 @@ export default function Header() {
       <div className="wrap bar">
         <Link className="brand" href="/">
           <img src="/mark.png" alt="Land of Nature" />
-          <span className="brand-txt"><b>Land of Nature</b><i>Transformando Positivamente</i></span>
+          <span className="brand-txt"><span className="bn">Land of Nature</span><i>Transformando Positivamente</i></span>
         </Link>
         <div className="htools">
           <Link className="pro-link" href="/contacto">Contacto</Link>

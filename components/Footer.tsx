@@ -5,7 +5,7 @@ export default function Footer() {
       <div className="wrap">
         <div className="fbrand">
           <img src="/brand-cream.png" alt="Land of Nature" />
-          <span><b>Land of Nature</b><i>Transformando Positivamente</i></span>
+          <span><span className="bn">Land of Nature</span><i>Transformando Positivamente</i></span>
         </div>
         <div className="fmeta">
           <div className="fl">

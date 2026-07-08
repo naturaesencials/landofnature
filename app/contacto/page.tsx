@@ -13,7 +13,7 @@ export default function ContactoPage() {
       <div className="wrap">
         <div className="acc-intro">
           <p className="eyebrow">Contacto</p>
-          <h1>¿Hablamos?</h1>
+          <h1>¿Hablamos? Contacta con Land of Nature</h1>
           <p>Estamos aquí para ayudarte con productos, composición (INCI), pedidos o el alta como profesional. Escríbenos y te respondemos lo antes posible.</p>
           <ul className="acc-steps">
             <li><span>@</span><div><b>Correo</b><small>Rellena el formulario y te contestamos por correo.</small></div></li>

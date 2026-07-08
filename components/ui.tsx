@@ -60,14 +60,14 @@ export function ProductCard({ p }: { p: Product }) {
   const out = st === "out" || unpriced;
   return (
     <article className="pcard">
+      <span className="tag">{p.category}</span>
+      <span className={`chip ${st} stockpill`}><span className="d" />{stockLabel(p)}</span>
       <Link href={`/producto/${p.slug}`} className="art" aria-label={`${p.brand} ${p.name} · ${p.size}`}>
-        <span className="tag">{p.category}</span>
-        <span className={`chip ${st} stockpill`}><span className="d" />{stockLabel(p)}</span>
         {p.image_url ? <img src={p.image_url} alt={`${p.brand} ${p.name} · ${p.size}`} className="pimg" loading="lazy" /> : <Bottle className="bottle" />}
       </Link>
       <div className="pbody">
-        <div className="cat">{p.brand} · {p.size}</div>
-        <Link href={`/producto/${p.slug}`} aria-label={`${p.brand} ${p.name} · ${p.size}`}><h4>{p.brand} {p.name}</h4></Link>
+        <div className="cat">{p.category}</div>
+        <Link href={`/producto/${p.slug}`} className="ptitle" aria-label={`${p.brand} ${p.name} · ${p.size}`}><h4>{p.brand} {p.name}</h4><span className="csz">{p.size}</span></Link>
         <div className="fmt-badge" aria-label={boxLabel(p)}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z" /><path d="M3 7.5 12 12l9-4.5M12 12v9" /></svg>
           <span>{boxLabel(p)}</span>
