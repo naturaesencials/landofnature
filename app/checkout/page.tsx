@@ -35,11 +35,25 @@ async function createRevolutOrder(orderNo: number) {
   return r.json();
 }
 
+function shippingCost(w: number): number {
+  if (w <= 0) return 0;
+  const full = Math.floor(w / 30);
+  const rem = w - full * 30;
+  let cost = full * 33.43;
+  if (rem > 0) {
+    const t: [number, number][] = [[1, 5.28], [2, 5.74], [3, 6.27], [5, 7.03], [7, 10.29], [10, 13.90], [15, 18.76], [20, 23.84], [25, 28.64], [30, 33.43]];
+    const b = t.find(([kg]) => rem <= kg);
+    cost += b ? b[1] : 33.43;
+  }
+  return Math.round(cost * 1.15 * 100) / 100;
+}
+
 export default function CheckoutPage() {
   const { lines, subtotal, setQty, clear } = useCart();
   const [method, setMethod] = useState<Method>("revolut");
   const [allowTransfer, setAllowTransfer] = useState(false);
   const [canDD, setCanDD] = useState(false);
+  const [shipping, setShipping] = useState(0);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [done, setDone] = useState<{ orderNo: number; total: number } | null>(null);
@@ -56,6 +70,23 @@ export default function CheckoutPage() {
     }).catch(() => {});
   }, []);
 
+  const cartKey = lines.map((l) => `${l.product_id}:${l.qty}`).join(",");
+  useEffect(() => {
+    if (lines.length === 0) { setShipping(0); return; }
+    (async () => {
+      try {
+        const sb = createClient();
+        const ids = lines.map((l) => l.product_id);
+        const { data } = await sb.from("products").select("id, weight_kg").in("id", ids);
+        const wmap: Record<string, number> = {};
+        for (const p of (data ?? []) as { id: string; weight_kg: number | null }[]) wmap[p.id] = Number(p.weight_kg) || 0;
+        const w = lines.reduce((s, l) => s + (wmap[l.product_id] || 0) * l.qty, 0);
+        setShipping(shippingCost(w));
+      } catch { /* ignore */ }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartKey]);
+
   async function pay(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setErr("");
@@ -68,7 +99,7 @@ export default function CheckoutPage() {
     const city = f.get("city") as string;
     const province = f.get("province") as string;
     const country = ((f.get("country") as string) || "España").trim();
-    const total = withVat(subtotal);
+    const total = withVat(subtotal) + shipping;
     setBusy(true);
 
     const res = await createGuestOrder({
@@ -193,7 +224,8 @@ export default function CheckoutPage() {
             ))}
             <div className="co-sub"><span>Subtotal (sin IVA)</span><span>{euro(subtotal)}</span></div>
             <div className="co-sub"><span>IVA 21%</span><span>{euro(vatOf(subtotal))}</span></div>
-            <div className="co-total"><span>Total</span><span>{euro(withVat(subtotal))}</span></div>
+            <div className="co-sub"><span>Envío {shipping === 0 ? "" : "(InPost, IVA incl.)"}</span><span>{shipping === 0 ? "Se calcula al confirmar" : euro(shipping)}</span></div>
+            <div className="co-total"><span>Total</span><span>{euro(withVat(subtotal) + shipping)}</span></div>
             <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>Precios por caja. Venta solo por caja completa.</p>
           </div>
 
@@ -246,7 +278,7 @@ export default function CheckoutPage() {
             <div className="guestnote">🔒 <div><b>Pago seguro.</b> Los pagos con tarjeta se procesan por Revolut con 3D Secure. No se crea ninguna cuenta.</div></div>
             {err && <p className="formerr">{err}</p>}
             <button className="btn cta full" disabled={busy}>
-              {busy ? "Procesando…" : (method === "transfer" || method === "gocardless") ? `Confirmar pedido · ${euro(withVat(subtotal))}` : `Pagar ${euro(withVat(subtotal))}`}
+              {busy ? "Procesando…" : (method === "transfer" || method === "gocardless") ? `Confirmar pedido · ${euro(withVat(subtotal) + shipping)}` : `Pagar ${euro(withVat(subtotal) + shipping)}`}
             </button>
           </form>
         </div>
