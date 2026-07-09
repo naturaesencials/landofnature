@@ -232,6 +232,9 @@ export default function CheckoutPage() {
           <form className="panel" onSubmit={pay}>
             <h3 className="serif" style={{ margin: "0 0 4px", fontSize: 20 }}>Datos de envío</h3>
             <p style={{ margin: "0 0 14px", fontSize: 12.5, color: "var(--muted)" }}>Todos los campos son obligatorios para poder enviarte el pedido.</p>
+            <div style={{ margin: "0 0 16px", background: "var(--cream)", borderLeft: "3px solid var(--olive)", borderRadius: 8, padding: "12px 14px", fontSize: 13, lineHeight: 1.55 }}>
+              <b>📦 Entrega en Punto de Recogida.</b> Los envíos se entregan en un <b>Punto Pack o Locker de InPost</b>, donde recogerás tu pedido. <b>No se realizan entregas en domicilio</b>, salvo pedidos paletizados o de gran volumen (en ese caso lo acordamos contigo). Indica tu dirección para asignarte el punto de recogida más cercano.
+            </div>
             <div className="field"><label>Nombre y apellidos *</label><input name="name" required placeholder="Nombre y apellidos" /></div>
             <div className="field"><label>Dirección completa (calle, número, piso, puerta) *</label><input name="address" required placeholder="Calle, número, piso, puerta" /></div>
             <div className="field2">
