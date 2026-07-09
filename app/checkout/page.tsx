@@ -54,6 +54,8 @@ export default function CheckoutPage() {
   const [allowTransfer, setAllowTransfer] = useState(false);
   const [canDD, setCanDD] = useState(false);
   const [shipping, setShipping] = useState(0);
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [acceptShip, setAcceptShip] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [done, setDone] = useState<{ orderNo: number; total: number } | null>(null);
@@ -90,6 +92,7 @@ export default function CheckoutPage() {
   async function pay(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setErr("");
+    if (!acceptTerms || !acceptShip) { setErr("Para continuar, marca las dos casillas de aceptación."); return; }
     const f = new FormData(e.currentTarget);
     const email = f.get("email") as string;
     const name = f.get("name") as string;
@@ -279,8 +282,18 @@ export default function CheckoutPage() {
             </div>
 
             <div className="guestnote">🔒 <div><b>Pago seguro.</b> Los pagos con tarjeta se procesan por Revolut con 3D Secure. No se crea ninguna cuenta.</div></div>
+            <div className="accept">
+              <label className="accept-row">
+                <input type="checkbox" checked={acceptTerms} onChange={(ev) => setAcceptTerms(ev.target.checked)} />
+                <span>He leído y acepto los <a href="/terminos" target="_blank" rel="noopener">Términos y Condiciones</a> y la <a href="/privacidad" target="_blank" rel="noopener">Política de Privacidad</a>.</span>
+              </label>
+              <label className="accept-row">
+                <input type="checkbox" checked={acceptShip} onChange={(ev) => setAcceptShip(ev.target.checked)} />
+                <span>Acepto los <a href="/envio" target="_blank" rel="noopener">términos de preparación y envío</a>: preparación en 72 h y entrega en Punto de Recogida InPost (los pedidos de gran volumen se acuerdan aparte).</span>
+              </label>
+            </div>
             {err && <p className="formerr">{err}</p>}
-            <button className="btn cta full" disabled={busy}>
+            <button className="btn cta full" disabled={busy || !acceptTerms || !acceptShip}>
               {busy ? "Procesando…" : (method === "transfer" || method === "gocardless") ? `Confirmar pedido · ${euro(withVat(subtotal) + shipping)}` : `Pagar ${euro(withVat(subtotal) + shipping)}`}
             </button>
           </form>

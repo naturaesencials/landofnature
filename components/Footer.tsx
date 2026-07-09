@@ -16,6 +16,7 @@ export default function Footer() {
           </div>
           <div className="fl fl-legal">
             <Link href="/terminos">Términos y condiciones</Link>
+            <Link href="/envio">Preparación y envío</Link>
             <Link href="/privacidad">Aviso legal y privacidad</Link>
             <Link href="/privacidad#cookies">Cookies</Link>
           </div>
