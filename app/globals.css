@@ -339,3 +339,18 @@ button{font-family:inherit}
 .accept-row{display:flex;gap:10px;align-items:flex-start;font-size:13px;line-height:1.5;color:var(--text);cursor:pointer}
 .accept-row input{margin-top:2px;width:16px;height:16px;flex:0 0 auto;accent-color:var(--olive);cursor:pointer}
 .accept-row a{color:var(--olive);font-weight:600;text-decoration:underline}
+.adm-ship{margin-top:16px;padding-top:14px;border-top:1px solid #E3E7D8}
+.adm-steps{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0 12px}
+.adm-step{border:1px solid var(--olive);background:#fff;color:var(--olive);font-size:12.5px;font-weight:600;padding:7px 12px;border-radius:8px;cursor:pointer}
+.adm-step:disabled{opacity:.4;cursor:default}
+.adm-step-now{font-size:12.5px;color:#64705A;margin-left:4px}
+.adm-shipform{display:flex;flex-direction:column;gap:10px}
+.adm-shiprow{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
+.adm-shiprow label{display:flex;flex-direction:column;gap:4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64705A;font-weight:600}
+.adm-input{border:1px solid #cdd4bf;border-radius:8px;padding:8px 10px;font-size:13.5px;min-width:200px;color:#414A34}
+.adm-hint{font-size:12px;color:#8a927e;padding-bottom:9px}
+.adm-shipped{background:#EEF0E4;border-left:3px solid var(--olive);border-radius:8px;padding:12px 14px;font-size:13.5px;color:#414A34;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.adm-shipped .sub{display:block;width:100%;color:#8a927e;font-size:12px;margin-top:2px}
+.adm-shipmsg{margin-top:10px;font-size:13px;padding:8px 12px;border-radius:8px}
+.adm-shipmsg.ok{background:#eaf3e6;color:#3c6b2f}
+.adm-shipmsg.err{background:#f6e5e2;color:#a3402f}

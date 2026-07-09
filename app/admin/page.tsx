@@ -16,7 +16,7 @@ export default async function AdminPage() {
 
   const [{ data: products }, { data: orders }, { data: requests }, { data: clients }] = await Promise.all([
     supabase.from("products").select("id,brand,name,size,sku,public_price,stock,active,units_per_box,family,category").order("brand").order("name"),
-    supabase.from("orders").select("id,order_no,created_at,name,email,phone,address,postal_code,city,province,country,payment_method,status,total,order_items(name_snapshot,qty,unit_price)").order("created_at", { ascending: false }).limit(100),
+    supabase.from("orders").select("id,order_no,created_at,name,email,phone,address,postal_code,city,province,country,payment_method,status,total,shipping,carrier,carrier_name,tracking_number,tracking_url,shipped_at,order_items(name_snapshot,qty,unit_price)").order("created_at", { ascending: false }).limit(100),
     supabase.from("account_requests").select("id,contact_name,company,cif,business_type,email,phone,message,status,created_at").order("created_at", { ascending: false }),
     supabase.from("profiles").select("id,full_name,company,cif,phone,role,tariff_code,status,allow_transfer,commercial_agreement,gc_mandate_status,created_at").neq("role", "admin").order("created_at", { ascending: false }),
   ]);

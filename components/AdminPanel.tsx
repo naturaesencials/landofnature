@@ -1,16 +1,16 @@
 "use client";
 import { useState, Fragment } from "react";
 import { euro, boxLabel } from "@/lib/types";
-import { adminUpdateProduct, adminUpdateOrderStatus, adminUpdateRequest, adminSetAgreement, adminSetTransfer } from "@/app/admin/actions";
+import { adminUpdateProduct, adminUpdateOrderStatus, adminUpdateRequest, adminSetAgreement, adminSetTransfer, adminShipOrder } from "@/app/admin/actions";
 
 type Prod = { id: string; brand: string; name: string; size: string | null; sku: string; public_price: number; stock: number; active: boolean; units_per_box: number | null; family: string | null; category: string };
 type OrderItem = { name_snapshot: string; qty: number; unit_price: number };
-type Order = { id: string; order_no: number; created_at: string; name: string | null; email: string | null; phone: string | null; address: string | null; postal_code: string | null; city: string | null; province: string | null; country: string | null; payment_method: string | null; status: string; total: number; order_items: OrderItem[] };
+type Order = { id: string; order_no: number; created_at: string; name: string | null; email: string | null; phone: string | null; address: string | null; postal_code: string | null; city: string | null; province: string | null; country: string | null; payment_method: string | null; status: string; total: number; shipping: number | null; carrier: string | null; carrier_name: string | null; tracking_number: string | null; tracking_url: string | null; shipped_at: string | null; order_items: OrderItem[] };
 type Req = { id: string; contact_name: string | null; company: string | null; cif: string | null; business_type: string | null; email: string | null; phone: string | null; message: string | null; status: string; created_at: string };
 type Client = { id: string; full_name: string | null; company: string | null; cif: string | null; phone: string | null; tariff_code: string | null; status: string | null; allow_transfer: boolean; commercial_agreement: boolean; gc_mandate_status: string | null; created_at: string };
 
 const fdate = (s: string) => new Date(s).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" });
-const ORDER_STATES: Record<string, string> = { pending_payment: "Pendiente de pago", paid: "Pagado", shipped: "Enviado", cancelled: "Cancelado" };
+const ORDER_STATES: Record<string, string> = { pending_payment: "Pendiente de pago", paid: "Pagado", confirmed: "Recepción confirmada", preparing: "En preparación", shipped: "Enviado", cancelled: "Cancelado" };
 
 export default function AdminPanel({ products, orders, requests, clients }: { products: Prod[]; orders: Order[]; requests: Req[]; clients: Client[] }) {
   const pendingReq = requests.filter((r) => r.status === "pending").length;
@@ -81,6 +81,9 @@ function Productos({ products }: { products: Prod[] }) {
 function Pedidos({ orders }: { orders: Order[] }) {
   const [rows, setRows] = useState(() => orders.map((o) => ({ ...o, _busy: false })));
   const [open, setOpen] = useState<string | null>(null);
+  function patch(id: string, data: Partial<Order>) {
+    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...data } : r)));
+  }
   async function setStatus(id: string, status: string) {
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, _busy: true } : r)));
     const res = await adminUpdateOrderStatus({ id, status });
@@ -99,7 +102,7 @@ function Pedidos({ orders }: { orders: Order[] }) {
                 <td>{fdate(o.created_at)}</td>
                 <td><b>{o.name || "—"}</b><span className="sub">{o.email}</span></td>
                 <td className="r"><b>{euro(Number(o.total))}</b></td>
-                <td>{o.payment_method === "card" ? "Tarjeta" : o.payment_method === "transfer" ? "Transferencia" : o.payment_method || "—"}</td>
+                <td>{o.payment_method === "card" ? "Tarjeta" : o.payment_method === "transfer" ? "Transferencia" : o.payment_method === "gocardless" ? "Domiciliación" : o.payment_method || "—"}</td>
                 <td>
                   <select className="adm-select" value={o.status} disabled={o._busy} onChange={(e) => setStatus(o.id, e.target.value)}>
                     {Object.entries(ORDER_STATES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -119,8 +122,10 @@ function Pedidos({ orders }: { orders: Order[] }) {
                     <div>
                       <div className="adm-dt">Líneas</div>
                       {o.order_items?.map((it, i) => <div key={i}>{it.qty} × {it.name_snapshot} · {euro(Number(it.unit_price))}</div>)}
+                      {o.shipping != null && <div style={{ marginTop: 6, color: "#64705A" }}>Envío: {euro(Number(o.shipping))}</div>}
                     </div>
                   </div>
+                  <Dispatch o={o} busy={o._busy} onStatus={(s) => setStatus(o.id, s)} onShipped={(d) => patch(o.id, d)} />
                 </td></tr>
               )}
             </Fragment>
@@ -130,6 +135,81 @@ function Pedidos({ orders }: { orders: Order[] }) {
     </div>
   );
 }
+
+/* ---------------- Preparación y envío de un pedido ---------------- */
+function Dispatch({ o, busy, onStatus, onShipped }: { o: Order; busy: boolean; onStatus: (s: string) => void; onShipped: (d: Partial<Order>) => void }) {
+  const [carrier, setCarrier] = useState(o.carrier || "inpost");
+  const [carrierName, setCarrierName] = useState(o.carrier_name || "");
+  const [trackingUrl, setTrackingUrl] = useState(o.tracking_url || "");
+  const [tracking, setTracking] = useState(o.tracking_number || "");
+  const [sending, setSending] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const shipped = o.status === "shipped";
+
+  async function ship() {
+    setMsg(null);
+    if (!tracking.trim()) { setMsg("Introduce el número de seguimiento."); return; }
+    if (carrier !== "inpost" && !carrierName.trim()) { setMsg("Introduce el nombre del transporte."); return; }
+    setSending(true);
+    const res = await adminShipOrder({ order_no: o.order_no, carrier, carrier_name: carrierName, tracking_number: tracking.trim(), tracking_url: trackingUrl.trim() });
+    setSending(false);
+    if (res.ok) {
+      const cn = carrier === "inpost" ? "InPost" : carrierName;
+      const tu = carrier === "inpost" ? "https://www.inpost.es/seguimiento-del-envio/" : trackingUrl.trim();
+      onShipped({ status: "shipped", carrier, carrier_name: cn, tracking_number: tracking.trim(), tracking_url: tu, shipped_at: new Date().toISOString() });
+      setMsg("✓ Pedido marcado como enviado. Aviso de despacho enviado al cliente.");
+    } else setMsg(res.error || "No se pudo completar el envío.");
+  }
+
+  return (
+    <div className="adm-ship">
+      <div className="adm-dt">Preparación y envío</div>
+      <div className="adm-steps">
+        <button className="adm-step" disabled={busy || ["confirmed", "preparing", "shipped"].includes(o.status)} onClick={() => onStatus("confirmed")}>1 · Confirmar recepción</button>
+        <button className="adm-step" disabled={busy || ["preparing", "shipped"].includes(o.status)} onClick={() => onStatus("preparing")}>2 · En preparación</button>
+        <span className="adm-step-now">Estado actual: <b>{ORDER_STATES[o.status] || o.status}</b></span>
+      </div>
+
+      {shipped ? (
+        <div className="adm-shipped">
+          <b>Enviado</b> · {o.carrier_name || (o.carrier === "inpost" ? "InPost" : o.carrier)} · Nº seguimiento <span className="mono">{o.tracking_number}</span>
+          {o.tracking_url && <> · <a href={o.tracking_url} target="_blank" rel="noopener">página de rastreo</a></>}
+          {o.shipped_at && <span className="sub">Despachado el {fdate(o.shipped_at)}</span>}
+        </div>
+      ) : (
+        <div className="adm-shipform">
+          <div className="adm-shiprow">
+            <label>Transporte
+              <select className="adm-select" value={carrier} onChange={(e) => setCarrier(e.target.value)}>
+                <option value="inpost">InPost (punto de recogida)</option>
+                <option value="otro">Otro</option>
+              </select>
+            </label>
+            {carrier === "otro" && (
+              <>
+                <label>Nombre del transporte
+                  <input className="adm-input" value={carrierName} onChange={(e) => setCarrierName(e.target.value)} placeholder="Ej.: SEUR, GLS, Correos…" />
+                </label>
+                <label>Página de rastreo (URL)
+                  <input className="adm-input" value={trackingUrl} onChange={(e) => setTrackingUrl(e.target.value)} placeholder="https://…" />
+                </label>
+              </>
+            )}
+            {carrier === "inpost" && <div className="adm-hint">Seguimiento: inpost.es/seguimiento-del-envio</div>}
+          </div>
+          <div className="adm-shiprow">
+            <label>Número de seguimiento
+              <input className="adm-input" value={tracking} onChange={(e) => setTracking(e.target.value)} placeholder="Nº de seguimiento" />
+            </label>
+            <button className="adm-save" disabled={sending} onClick={ship}>{sending ? "Enviando…" : "3 · Marcar como enviado y avisar"}</button>
+          </div>
+        </div>
+      )}
+      {msg && <div className={`adm-shipmsg ${msg.startsWith("✓") ? "ok" : "err"}`}>{msg}</div>}
+    </div>
+  );
+}
+
 
 /* ---------------- Solicitudes ---------------- */
 function Solicitudes({ requests }: { requests: Req[] }) {
