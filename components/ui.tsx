@@ -1,5 +1,5 @@
 "use client";
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { euro, stockState, stockLabel, boxLabel, type Product } from "@/lib/types";
@@ -126,35 +126,81 @@ function WaIcon() {
   return <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28"><path d="M12 2a10 10 0 0 0-8.7 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2zm5.3 14.1c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7a11.5 11.5 0 0 1-4.6-4c-.3-.5-1.2-1.7-1.2-3.2s.8-2.3 1.1-2.6c.3-.3.6-.4.8-.4h.6c.2 0 .4 0 .6.5l.9 2.1c0 .2.1.4 0 .6l-.5.6c-.2.2-.3.4-.1.7.7 1.2 1.5 1.9 2.7 2.5.3.1.5.1.7-.1l.7-.8c.2-.2.4-.2.6-.1l2 1c.3.1.4.2.5.3.1.3.1.7-.1 1.4z" /></svg>;
 }
 
+/* ---------------- Verificación humana (Cloudflare Turnstile) ---------------- */
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
+
+export function Turnstile({ onToken }: { onToken: (t: string) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const widget = useRef<string | null>(null);
+  useEffect(() => {
+    if (!TURNSTILE_SITE_KEY) return;
+    let iv: ReturnType<typeof setInterval> | undefined;
+    const render = () => {
+      const ts = (window as unknown as { turnstile?: any }).turnstile;
+      if (!ts || !ref.current || widget.current) return;
+      widget.current = ts.render(ref.current, {
+        sitekey: TURNSTILE_SITE_KEY,
+        callback: (t: string) => onToken(t),
+        "error-callback": () => onToken(""),
+        "expired-callback": () => onToken(""),
+        theme: "light",
+      });
+    };
+    if ((window as unknown as { turnstile?: any }).turnstile) { render(); }
+    else {
+      const SRC = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      if (!document.querySelector(`script[src^="https://challenges.cloudflare.com/turnstile"]`)) {
+        const s = document.createElement("script"); s.src = SRC; s.async = true; s.defer = true; document.head.appendChild(s);
+      }
+      iv = setInterval(() => { if ((window as unknown as { turnstile?: any }).turnstile) { clearInterval(iv); render(); } }, 200);
+    }
+    return () => { if (iv) clearInterval(iv); };
+  }, [onToken]);
+  if (!TURNSTILE_SITE_KEY) return null;
+  return <div ref={ref} style={{ marginTop: 4 }} />;
+}
+const resetTurnstile = () => { try { (window as unknown as { turnstile?: any }).turnstile?.reset(); } catch { /* noop */ } };
+
 /* ---------------- Formulario crear cuenta ---------------- */
 export function AccountForm() {
   const [sent, setSent] = useState(false);
+  const [sentEmail, setSentEmail] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [token, setToken] = useState("");
+  const onToken = useCallback((t: string) => setToken(t), []);
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setErr("");
     const f = new FormData(e.currentTarget);
     if (!(f.get("priv") as string)) { setErr("Marca la casilla de privacidad."); return; }
+    if (TURNSTILE_SITE_KEY && !token) { setErr("Completa la verificación de seguridad."); return; }
     setBusy(true);
+    const email = (f.get("email") as string).trim();
     const res = await submitAccountRequest({
       contact_name: f.get("contact_name") as string, company: f.get("company") as string,
       cif: f.get("cif") as string, business_type: f.get("business_type") as string,
-      email: f.get("email") as string, phone: f.get("phone") as string, message: f.get("message") as string,
+      email, phone: f.get("phone") as string, message: f.get("message") as string,
+      website: (f.get("website") as string) || "", turnstileToken: token,
     });
     setBusy(false);
-    if (res.ok) setSent(true); else setErr(res.error || "Error al enviar.");
+    if (res.ok) { setSentEmail(email); setSent(true); }
+    else { setErr(res.error || "Error al enviar."); setToken(""); resetTurnstile(); }
   }
   if (sent) return (
     <div className="acc-form"><div className="success">
-      <div className="ring">✓</div><h3>Solicitud enviada</h3>
-      <p>Gracias. Revisaremos tus datos y te contactaremos para activar tu cuenta y asignarte tu tarifa.</p>
+      <div className="ring">✉</div><h3>Confirma tu correo</h3>
+      <p>Te hemos enviado un correo{sentEmail ? <> a <b>{sentEmail}</b></> : null} para confirmar tu solicitud. Ábrelo y pulsa el enlace: tu solicitud llegará a nuestro equipo solo después de confirmarla.</p>
+      <p style={{ fontSize: 13, color: "var(--muted)", marginTop: 10 }}>¿No lo ves? Revisa la carpeta de spam o correo no deseado.</p>
     </div></div>
   );
   return (
     <form className="acc-form" onSubmit={onSubmit}>
       <h3>Solicita tu cuenta</h3>
       <p className="fsub">Rellena tus datos y te contactamos para activarla.</p>
+      {/* Honeypot: invisible para humanos; los bots lo rellenan y se descarta la solicitud. */}
+      <input type="text" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true"
+        style={{ position: "absolute", left: "-9999px", width: 1, height: 1, opacity: 0 }} />
       <div className="frow">
         <div className="field"><label>Nombre de contacto *</label><input name="contact_name" required placeholder="Nombre y apellidos" /></div>
         <div className="field"><label>Empresa / razón social *</label><input name="company" required placeholder="Tu empresa" /></div>
@@ -173,9 +219,10 @@ export function AccountForm() {
       </div>
       <div className="field"><label>Mensaje (opcional)</label><textarea name="message" placeholder="Cuéntanos sobre tu negocio o qué productos te interesan." /></div>
       <label className="acc-check"><input type="checkbox" name="priv" value="1" /> Acepto la política de privacidad y el tratamiento de mis datos para gestionar mi solicitud.</label>
+      <Turnstile onToken={onToken} />
       {err && <p className="formerr">{err}</p>}
       <button className="btn cta full" style={{ marginTop: 8 }} disabled={busy}>{busy ? "Enviando…" : "Enviar solicitud"}</button>
-      <p className="acc-note">🔒 Tu solicitud se revisa antes de activar la cuenta. No se crea ninguna cuenta hasta la aprobación.</p>
+      <p className="acc-note">🔒 Verificamos tu correo y revisamos tus datos antes de activar la cuenta. No se crea ninguna cuenta hasta la aprobación.</p>
     </form>
   );
 }

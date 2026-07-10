@@ -6,25 +6,40 @@ export type ActionResult = { ok: boolean; error?: string; orderNo?: number };
 
 export async function submitAccountRequest(form: {
   contact_name: string; company: string; cif: string; business_type?: string;
-  email: string; phone: string; message?: string;
+  email: string; phone: string; message?: string; website?: string; turnstileToken?: string;
 }): Promise<ActionResult> {
   const required = ["contact_name", "company", "cif", "email", "phone"] as const;
   for (const k of required) {
     if (!form[k] || !String(form[k]).trim()) return { ok: false, error: "Faltan datos obligatorios." };
   }
+  // La solicitud entra por la edge function, que valida honeypot + Turnstile,
+  // la registra como "sin verificar" y envía el correo de confirmación.
+  // No llega al panel de admin hasta que el solicitante confirma su correo.
   const supabase = createClient();
-  const { error } = await supabase.from("account_requests").insert({
-    contact_name: form.contact_name.trim(),
-    company: form.company.trim(),
-    cif: form.cif.trim(),
-    business_type: form.business_type || null,
-    email: form.email.trim(),
-    phone: form.phone.trim(),
-    message: form.message?.trim() || null,
-    status: "pending",
+  const { data, error } = await supabase.functions.invoke("account-submit", {
+    body: {
+      contact_name: form.contact_name.trim(),
+      company: form.company.trim(),
+      cif: form.cif.trim(),
+      business_type: form.business_type || null,
+      email: form.email.trim(),
+      phone: form.phone.trim(),
+      message: form.message?.trim() || null,
+      website: form.website || "",
+      turnstileToken: form.turnstileToken || "",
+    },
   });
   if (error) return { ok: false, error: "No se pudo enviar la solicitud. Inténtalo de nuevo." };
+  if (data && data.ok === false) return { ok: false, error: data.error || "No se pudo enviar la solicitud." };
   return { ok: true };
+}
+
+export async function confirmAccountRequest(token: string): Promise<{ ok: boolean }> {
+  if (!token || token.trim().length < 10) return { ok: false };
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc("confirm_account_request", { p_token: token.trim() });
+  if (error) return { ok: false };
+  return { ok: data === "ok" };
 }
 
 export async function subscribeStock(input: { product_id: string; email: string }): Promise<ActionResult> {
