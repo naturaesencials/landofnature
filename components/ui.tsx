@@ -127,7 +127,7 @@ function WaIcon() {
 }
 
 /* ---------------- Verificación humana (Cloudflare Turnstile) ---------------- */
-const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "0x4AAAAAADz3aFzGn91b7IYV";
 
 export function Turnstile({ onToken }: { onToken: (t: string) => void }) {
   const ref = useRef<HTMLDivElement>(null);
