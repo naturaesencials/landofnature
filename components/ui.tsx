@@ -232,19 +232,23 @@ export function ContactForm() {
   const [sent, setSent] = useState(false);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [token, setToken] = useState("");
+  const onToken = useCallback((t: string) => setToken(t), []);
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setErr("");
     const f = new FormData(e.currentTarget);
     if (!(f.get("priv") as string)) { setErr("Marca la casilla de privacidad."); return; }
+    if (TURNSTILE_SITE_KEY && !token) { setErr("Completa la verificación de seguridad."); return; }
     setBusy(true);
     const res = await submitContactMessage({
       name: f.get("name") as string, email: f.get("email") as string,
       phone: f.get("phone") as string, subject: f.get("subject") as string,
       message: f.get("message") as string,
+      website: (f.get("website") as string) || "", turnstileToken: token,
     });
     setBusy(false);
-    if (res.ok) setSent(true); else setErr(res.error || "Error al enviar.");
+    if (res.ok) setSent(true); else { setErr(res.error || "Error al enviar."); setToken(""); resetTurnstile(); }
   }
   if (sent) return (
     <div className="acc-form"><div className="success">
@@ -256,6 +260,9 @@ export function ContactForm() {
     <form className="acc-form" onSubmit={onSubmit}>
       <h3>Escríbenos</h3>
       <p className="fsub">¿Dudas sobre un producto, un pedido o tu cuenta? Cuéntanos.</p>
+      {/* Honeypot: invisible para humanos; los bots lo rellenan y se descarta el mensaje. */}
+      <input type="text" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true"
+        style={{ position: "absolute", left: "-9999px", width: 1, height: 1, opacity: 0 }} />
       <div className="frow">
         <div className="field"><label>Nombre</label><input name="name" placeholder="Nombre y apellidos" /></div>
         <div className="field"><label>Correo *</label><input name="email" type="email" required placeholder="tu@correo.com" /></div>
@@ -266,6 +273,7 @@ export function ContactForm() {
       </div>
       <div className="field"><label>Mensaje *</label><textarea name="message" required placeholder="Escribe aquí tu consulta." /></div>
       <label className="acc-check"><input type="checkbox" name="priv" value="1" /> Acepto la política de privacidad y el tratamiento de mis datos para gestionar mi consulta.</label>
+      <Turnstile onToken={onToken} />
       {err && <p className="formerr">{err}</p>}
       <button className="btn cta full" style={{ marginTop: 8 }} disabled={busy}>{busy ? "Enviando…" : "Enviar mensaje"}</button>
       <p className="acc-note">🔒 Tus datos se usan solo para responder a tu consulta.</p>

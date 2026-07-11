@@ -56,19 +56,24 @@ export async function subscribeStock(input: { product_id: string; email: string 
 
 export async function submitContactMessage(form: {
   name?: string; email: string; phone?: string; subject?: string; message: string;
+  website?: string; turnstileToken?: string;
 }): Promise<ActionResult> {
   if (!form.email || !String(form.email).trim()) return { ok: false, error: "El correo es obligatorio." };
   if (!form.message || !String(form.message).trim()) return { ok: false, error: "Escribe tu mensaje." };
   const supabase = createClient();
-  const { error } = await supabase.from("contact_messages").insert({
-    name: form.name?.trim() || null,
-    email: form.email.trim(),
-    phone: form.phone?.trim() || null,
-    subject: form.subject?.trim() || null,
-    message: form.message.trim(),
-    status: "new",
+  const { data, error } = await supabase.functions.invoke("contact-submit", {
+    body: {
+      name: form.name?.trim() || null,
+      email: form.email.trim(),
+      phone: form.phone?.trim() || null,
+      subject: form.subject?.trim() || null,
+      message: form.message.trim(),
+      website: form.website || "",
+      turnstileToken: form.turnstileToken || "",
+    },
   });
   if (error) return { ok: false, error: "No se pudo enviar el mensaje. Inténtalo de nuevo." };
+  if (data && data.ok === false) return { ok: false, error: data.error || "No se pudo enviar el mensaje." };
   return { ok: true };
 }
 
