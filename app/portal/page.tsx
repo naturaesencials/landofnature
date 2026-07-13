@@ -36,6 +36,7 @@ export default async function Portal() {
           <p className="lead">{profile?.company ? `${profile.company} · ` : ""}{tariff ? <span className="tprice-badge">● Tu tarifa: {tariff}</span> : "Cuenta pendiente de asignar tarifa."}</p>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          {profile?.role === "admin" && <Link href="/admin" className="btn cta">Panel de administración</Link>}
           <Link href="/portal/domiciliacion" className="btn line">Domiciliación bancaria</Link>
           <Logout />
         </div>

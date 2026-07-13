@@ -13,13 +13,19 @@ export default function Acceso() {
     setErr(""); setBusy(true);
     const f = new FormData(e.currentTarget);
     const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data: auth, error } = await supabase.auth.signInWithPassword({
       email: (f.get("email") as string).trim(),
       password: f.get("password") as string,
     });
+    if (error) { setBusy(false); setErr("Correo o contraseña incorrectos."); return; }
+    let dest = "/portal";
+    const uid = auth.user?.id;
+    if (uid) {
+      const { data: prof } = await supabase.from("profiles").select("role").eq("id", uid).single();
+      if (prof?.role === "admin") dest = "/admin";
+    }
     setBusy(false);
-    if (error) { setErr("Correo o contraseña incorrectos."); return; }
-    router.push("/portal"); router.refresh();
+    router.push(dest); router.refresh();
   }
   return (
     <section className="page"><div className="wrap">
