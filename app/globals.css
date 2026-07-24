@@ -354,3 +354,69 @@ button{font-family:inherit}
 .adm-shipmsg{margin-top:10px;font-size:13px;padding:8px 12px;border-radius:8px}
 .adm-shipmsg.ok{background:#eaf3e6;color:#3c6b2f}
 .adm-shipmsg.err{background:#f6e5e2;color:#a3402f}
+
+/* ===== Panel admin · tarifas, contratos, facturas y resumen ===== */
+.adm-box{border:1px solid var(--line);border-radius:8px;background:#fff;padding:14px 16px;margin-bottom:14px}
+.adm-chips{display:flex;flex-wrap:wrap;gap:10px}
+.adm-tchip{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:6px;padding:6px 10px;background:var(--cream)}
+.adm-tchip b{font-family:var(--font-mono);font-size:12px;color:var(--olive)}
+.adm-input.tiny{min-width:84px;width:84px}
+.adm-input.wide{min-width:280px;width:100%}
+.adm-check{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:#64705A;text-transform:none;letter-spacing:0;font-weight:400;padding-bottom:9px}
+.adm-check input{width:auto}
+
+/* Matriz de precios por tarifa */
+.adm-matrix th .thsub{display:block;font-size:9px;color:var(--muted);font-weight:400;letter-spacing:.04em}
+.adm-matrix .offpct{display:block;font-family:var(--font-mono);font-size:9.5px;color:var(--muted);margin-top:2px}
+.adm-num.ok{border-color:var(--olive);background:#F6F8EE}
+.adm-num.bad{border-color:#c0492f}
+
+/* KPIs */
+.adm-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin-bottom:22px}
+.adm-kpis.small{grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:14px}
+.adm-kpi{display:flex;flex-direction:column;gap:4px;align-items:flex-start;text-align:left;border:1px solid var(--line);border-left:3px solid var(--line);border-radius:8px;background:#fff;padding:13px 15px;cursor:default;font-family:var(--font-sans)}
+button.adm-kpi{cursor:pointer;transition:.15s}
+button.adm-kpi:hover{border-color:var(--olive);transform:translateY(-1px)}
+.adm-kpi span{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.adm-kpi b{font-size:20px;font-family:var(--font-serif);font-weight:500;color:var(--ink)}
+.adm-kpi i{font-style:normal;font-size:11.5px;color:var(--muted)}
+.adm-kpi.ok{border-left-color:var(--olive)}
+.adm-kpi.bad{border-left-color:#c0492f}
+.adm-kpi.bad b{color:#c0492f}
+.adm-kpi.warn{border-left-color:#d79a2b}
+.adm-kpi.mute{border-left-color:#c2c9b4}
+
+.adm-cols{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+@media(max-width:900px){.adm-cols{grid-template-columns:1fr}}
+.adm-table td.over{color:#c0492f;font-weight:600}
+
+.adm-alerts{display:flex;flex-direction:column;gap:8px}
+.adm-alert{display:flex;gap:10px;align-items:baseline;border-radius:6px;padding:9px 12px;font-size:13px;background:#FBF3E4;border-left:3px solid #d79a2b}
+.adm-alert.bad{background:#F8ECE9;border-left-color:#c0492f}
+.adm-alert b{min-width:170px}
+.adm-alert span{color:#5b6350}
+
+/* Ficha de contrato */
+.adm-contract{padding:6px 2px 4px}
+.adm-cthead{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+.adm-ctactions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.adm-ctsection{border-top:1px solid #E3E7D8;padding:14px 0 4px}
+.adm-ctgrid{display:flex;flex-wrap:wrap;gap:14px 18px;align-items:flex-end}
+.adm-ctfield{display:flex;flex-direction:column;gap:4px}
+.adm-ctfield>span{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:#64705A}
+.adm-fileline{display:flex;align-items:center;gap:10px;font-size:12.5px}
+
+/* Cálculos derivados del contrato */
+.adm-calc{display:flex;flex-wrap:wrap;gap:8px 26px;background:#EEF0E4;border-left:3px solid var(--olive);border-radius:6px;padding:10px 14px;margin-top:4px;width:100%}
+.adm-calc.warn{background:#FBF3E4;border-left-color:#d79a2b}
+.adm-calc>div{display:flex;flex-direction:column;gap:2px}
+.adm-calc span{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:#64705A}
+.adm-calc b{font-size:14px;color:var(--ink)}
+.adm-calcinline{font-size:12.5px;color:#5b6350;padding-bottom:9px}
+
+/* Barras de progreso de objetivos */
+.adm-bar-wrap{display:flex;align-items:center;gap:8px;margin:2px 0}
+.adm-bar-track{width:120px;height:6px;background:#E3E7D8;border-radius:6px;overflow:hidden}
+.adm-bar-fill{height:100%;background:var(--olive)}
+.adm-bar-fill.alt{background:#B9A063}
+.adm-bar-wrap span{font-family:var(--font-mono);font-size:10px;color:var(--muted)}

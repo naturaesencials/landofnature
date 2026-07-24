@@ -1,32 +1,59 @@
 "use client";
 import { useState, Fragment } from "react";
 import { euro, boxLabel } from "@/lib/types";
-import { adminUpdateProduct, adminUpdateOrderStatus, adminUpdateRequest, adminSetAgreement, adminSetTransfer, adminShipOrder } from "@/app/admin/actions";
+import type { Tariff, Contract, ContractTarget, Commission, Invoice, Payment } from "@/lib/contracts";
+import type { Prod, Order, Req, Client, TariffPrice, ClientOrder } from "./admin/types";
+import { fdate, ORDER_STATES } from "./admin/types";
+import Resumen from "./admin/Resumen";
+import Tarifas from "./admin/Tarifas";
+import Facturas from "./admin/Facturas";
+import Clientes from "./admin/Clientes";
+import { adminUpdateProduct, adminUpdateOrderStatus, adminUpdateRequest, adminShipOrder } from "@/app/admin/actions";
 
-type Prod = { id: string; brand: string; name: string; size: string | null; sku: string; public_price: number; stock: number; active: boolean; units_per_box: number | null; family: string | null; category: string };
-type OrderItem = { name_snapshot: string; qty: number; unit_price: number };
-type Order = { id: string; order_no: number; created_at: string; name: string | null; email: string | null; phone: string | null; address: string | null; postal_code: string | null; city: string | null; province: string | null; country: string | null; payment_method: string | null; status: string; total: number; shipping: number | null; carrier: string | null; carrier_name: string | null; tracking_number: string | null; tracking_url: string | null; shipped_at: string | null; order_items: OrderItem[] };
-type Req = { id: string; contact_name: string | null; company: string | null; cif: string | null; business_type: string | null; email: string | null; phone: string | null; message: string | null; status: string; created_at: string };
-type Client = { id: string; full_name: string | null; company: string | null; cif: string | null; phone: string | null; tariff_code: string | null; status: string | null; allow_transfer: boolean; commercial_agreement: boolean; gc_mandate_status: string | null; created_at: string };
+type Props = {
+  products: Prod[]; orders: Order[]; requests: Req[]; clients: Client[];
+  tariffs: Tariff[]; tariffPrices: TariffPrice[];
+  contracts: Contract[]; targets: ContractTarget[]; commissions: Commission[];
+  invoices: Invoice[]; payments: Payment[]; clientOrders: ClientOrder[];
+};
 
-const fdate = (s: string) => new Date(s).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" });
-const ORDER_STATES: Record<string, string> = { pending_payment: "Pendiente de pago", paid: "Pagado", confirmed: "Recepción confirmada", preparing: "En preparación", shipped: "Enviado", cancelled: "Cancelado" };
+type Tab = "resumen" | "productos" | "tarifas" | "pedidos" | "facturas" | "clientes" | "solicitudes";
 
-export default function AdminPanel({ products, orders, requests, clients }: { products: Prod[]; orders: Order[]; requests: Req[]; clients: Client[] }) {
-  const pendingReq = requests.filter((r) => r.status === "pending").length;
-  const [tab, setTab] = useState<"productos" | "pedidos" | "solicitudes" | "clientes">("productos");
+export default function AdminPanel(p: Props) {
+  const pendingReq = p.requests.filter((r) => r.status === "pending").length;
+  const [tab, setTab] = useState<Tab>("resumen");
+  const openInvoices = p.invoices.filter((i) => i.status === "pending" || i.status === "partial").length;
+
   return (
     <div>
       <div className="adm-tabs">
-        <button className={tab === "productos" ? "on" : ""} onClick={() => setTab("productos")}>Productos <span>{products.length}</span></button>
-        <button className={tab === "pedidos" ? "on" : ""} onClick={() => setTab("pedidos")}>Pedidos <span>{orders.length}</span></button>
-        <button className={tab === "clientes" ? "on" : ""} onClick={() => setTab("clientes")}>Clientes <span>{clients.length}</span></button>
+        <button className={tab === "resumen" ? "on" : ""} onClick={() => setTab("resumen")}>Resumen</button>
+        <button className={tab === "productos" ? "on" : ""} onClick={() => setTab("productos")}>Productos <span>{p.products.length}</span></button>
+        <button className={tab === "tarifas" ? "on" : ""} onClick={() => setTab("tarifas")}>Tarifas <span>{p.tariffs.length}</span></button>
+        <button className={tab === "pedidos" ? "on" : ""} onClick={() => setTab("pedidos")}>Pedidos <span>{p.orders.length}</span></button>
+        <button className={tab === "facturas" ? "on" : ""} onClick={() => setTab("facturas")}>Facturas {openInvoices > 0 ? <span>{openInvoices}</span> : null}</button>
+        <button className={tab === "clientes" ? "on" : ""} onClick={() => setTab("clientes")}>Clientes <span>{p.clients.length}</span></button>
         <button className={tab === "solicitudes" ? "on" : ""} onClick={() => setTab("solicitudes")}>Solicitudes {pendingReq > 0 && <span className="alert">{pendingReq}</span>}</button>
       </div>
-      {tab === "productos" && <Productos products={products} />}
-      {tab === "pedidos" && <Pedidos orders={orders} />}
-      {tab === "clientes" && <Clientes clients={clients} />}
-      {tab === "solicitudes" && <Solicitudes requests={requests} />}
+
+      {tab === "resumen" && (
+        <Resumen
+          invoices={p.invoices} orders={p.orders} clients={p.clients}
+          contracts={p.contracts} commissions={p.commissions} clientOrders={p.clientOrders}
+          onGo={(t) => setTab(t)}
+        />
+      )}
+      {tab === "productos" && <Productos products={p.products} />}
+      {tab === "tarifas" && <Tarifas products={p.products} tariffs={p.tariffs} tariffPrices={p.tariffPrices} />}
+      {tab === "pedidos" && <Pedidos orders={p.orders} />}
+      {tab === "facturas" && <Facturas invoices={p.invoices} payments={p.payments} clients={p.clients} contracts={p.contracts} />}
+      {tab === "clientes" && (
+        <Clientes
+          clients={p.clients} tariffs={p.tariffs} contracts={p.contracts}
+          targets={p.targets} commissions={p.commissions} clientOrders={p.clientOrders}
+        />
+      )}
+      {tab === "solicitudes" && <Solicitudes requests={p.requests} />}
     </div>
   );
 }
@@ -243,45 +270,6 @@ function Solicitudes({ requests }: { requests: Req[] }) {
           ))}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-/* ---------------- Clientes ---------------- */
-function Clientes({ clients }: { clients: Client[] }) {
-  const [rows, setRows] = useState(() => clients.map((c) => ({ ...c, _busy: false })));
-  async function toggleAgreement(id: string, value: boolean) {
-    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, _busy: true } : r)));
-    const res = await adminSetAgreement({ id, value });
-    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, commercial_agreement: res.ok ? value : r.commercial_agreement, _busy: false } : r)));
-  }
-  async function toggleTransfer(id: string, value: boolean) {
-    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, _busy: true } : r)));
-    const res = await adminSetTransfer({ id, value });
-    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, allow_transfer: res.ok ? value : r.allow_transfer, _busy: false } : r)));
-  }
-  const mandate = (s: string | null) => s === "active" ? <span className="adm-chip ok">Activa</span> : s ? <span className="adm-chip pend">{s}</span> : <span className="adm-chip no">Sin mandato</span>;
-  if (rows.length === 0) return <p className="adm-empty">No hay clientes registrados.</p>;
-  return (
-    <div>
-      <p className="adm-hint" style={{ marginBottom: 12 }}>Autoriza por cliente los pagos aplazados. <b>Transferencia</b>: habilita el pago por transferencia. <b>Domiciliación</b>: habilita el adeudo SEPA (el cliente deberá autorizar luego su mandato desde el portal). Los invitados solo pueden pagar con tarjeta.</p>
-      <div className="adm-tablewrap">
-        <table className="adm-table">
-          <thead><tr><th>Cliente</th><th>CIF</th><th>Tarifa</th><th className="c">Transferencia</th><th className="c">Domiciliación</th><th className="c">Mandato SEPA</th></tr></thead>
-          <tbody>
-            {rows.map((c) => (
-              <tr key={c.id}>
-                <td><b>{c.company || c.full_name || "—"}</b><span className="sub">{c.full_name}{c.phone ? " · " + c.phone : ""}</span></td>
-                <td className="mono">{c.cif || "—"}</td>
-                <td className="c">{c.tariff_code || "—"}</td>
-                <td className="c"><label className="adm-switch"><input type="checkbox" checked={c.allow_transfer} disabled={c._busy} onChange={(e) => toggleTransfer(c.id, e.target.checked)} /><span /></label></td>
-                <td className="c"><label className="adm-switch"><input type="checkbox" checked={c.commercial_agreement} disabled={c._busy} onChange={(e) => toggleAgreement(c.id, e.target.checked)} /><span /></label></td>
-                <td className="c">{mandate(c.gc_mandate_status)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }
