@@ -1,8 +1,11 @@
 export type Prod = {
   id: string; brand: string; name: string; size: string | null; sku: string;
   public_price: number; stock: number; active: boolean; units_per_box: number | null;
-  family: string | null; category: string;
+  family: string | null; category: string; barcode?: string | null; image_url?: string | null;
 };
+
+export type Warehouse = { id: string; name: string; sort: number };
+export type InventoryLevel = { product_id: string; warehouse_id: string; on_hand: number };
 
 export type OrderItem = { name_snapshot: string; qty: number; unit_price: number };
 

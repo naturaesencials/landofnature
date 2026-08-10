@@ -2,12 +2,13 @@
 import { useState, Fragment } from "react";
 import { euro, boxLabel } from "@/lib/types";
 import type { Tariff, Contract, ContractTarget, Commission, Invoice, Payment } from "@/lib/contracts";
-import type { Prod, Order, Req, Client, TariffPrice, ClientOrder } from "./admin/types";
+import type { Prod, Order, Req, Client, TariffPrice, ClientOrder, Warehouse, InventoryLevel } from "./admin/types";
 import { fdate, ORDER_STATES } from "./admin/types";
 import Resumen from "./admin/Resumen";
 import Tarifas from "./admin/Tarifas";
 import Facturas from "./admin/Facturas";
 import Clientes from "./admin/Clientes";
+import Inventario from "./admin/Inventario";
 import { adminUpdateProduct, adminUpdateOrderStatus, adminUpdateRequest, adminShipOrder } from "@/app/admin/actions";
 
 type Props = {
@@ -15,9 +16,10 @@ type Props = {
   tariffs: Tariff[]; tariffPrices: TariffPrice[];
   contracts: Contract[]; targets: ContractTarget[]; commissions: Commission[];
   invoices: Invoice[]; payments: Payment[]; clientOrders: ClientOrder[];
+  warehouses: Warehouse[]; inventoryLevels: InventoryLevel[];
 };
 
-type Tab = "resumen" | "productos" | "tarifas" | "pedidos" | "facturas" | "clientes" | "solicitudes";
+type Tab = "resumen" | "productos" | "tarifas" | "pedidos" | "facturas" | "clientes" | "solicitudes" | "inventario";
 
 export default function AdminPanel(p: Props) {
   const pendingReq = p.requests.filter((r) => r.status === "pending").length;
@@ -29,6 +31,7 @@ export default function AdminPanel(p: Props) {
       <div className="adm-tabs">
         <button className={tab === "resumen" ? "on" : ""} onClick={() => setTab("resumen")}>Resumen</button>
         <button className={tab === "productos" ? "on" : ""} onClick={() => setTab("productos")}>Productos <span>{p.products.length}</span></button>
+        <button className={tab === "inventario" ? "on" : ""} onClick={() => setTab("inventario")}>Inventario</button>
         <button className={tab === "tarifas" ? "on" : ""} onClick={() => setTab("tarifas")}>Tarifas <span>{p.tariffs.length}</span></button>
         <button className={tab === "pedidos" ? "on" : ""} onClick={() => setTab("pedidos")}>Pedidos <span>{p.orders.length}</span></button>
         <button className={tab === "facturas" ? "on" : ""} onClick={() => setTab("facturas")}>Facturas {openInvoices > 0 ? <span>{openInvoices}</span> : null}</button>
@@ -44,6 +47,7 @@ export default function AdminPanel(p: Props) {
         />
       )}
       {tab === "productos" && <Productos products={p.products} />}
+      {tab === "inventario" && <Inventario products={p.products} warehouses={p.warehouses} levels={p.inventoryLevels} />}
       {tab === "tarifas" && <Tarifas products={p.products} tariffs={p.tariffs} tariffPrices={p.tariffPrices} />}
       {tab === "pedidos" && <Pedidos orders={p.orders} />}
       {tab === "facturas" && <Facturas invoices={p.invoices} payments={p.payments} clients={p.clients} contracts={p.contracts} />}

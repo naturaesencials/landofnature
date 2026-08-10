@@ -305,3 +305,94 @@ export async function adminDocUrl(input: { bucket: "invoices" | "contracts"; pat
   if (error) return { ok: false, error: error.message };
   return { ok: true, url: data?.signedUrl };
 }
+
+/* ---------------- Inventario ---------------- */
+
+export type InvLookup = {
+  id: string; brand: string; name: string; size: string | null; sku: string; barcode: string | null;
+  units_per_box: number | null; image_url: string | null;
+  levels: { warehouse_id: string; on_hand: number }[];
+};
+
+/** Busca un producto por código de barras o SKU exacto y devuelve su stock por almacén. */
+export async function adminInventoryLookup(input: { code: string }): Promise<Res & { product?: InvLookup }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const code = input.code.trim();
+  if (!code) return { ok: false, error: "Código vacío." };
+  const { data: prod, error } = await supabase
+    .from("products")
+    .select("id,brand,name,size,sku,barcode,units_per_box,image_url")
+    .or(`barcode.eq.${code},sku.eq.${code}`)
+    .limit(1)
+    .maybeSingle();
+  if (error) return { ok: false, error: error.message };
+  if (!prod) return { ok: false, error: "No se ha encontrado ningún producto con ese código." };
+  const { data: levels } = await supabase.from("inventory_levels").select("warehouse_id,on_hand").eq("product_id", prod.id);
+  return { ok: true, product: { ...prod, levels: levels ?? [] } };
+}
+
+/** Asigna o cambia el código de barras de un producto. */
+export async function adminSetBarcode(input: { product_id: string; barcode: string }): Promise<Res> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const barcode = input.barcode.trim();
+  const { error } = await supabase.from("products").update({ barcode: barcode || null, updated_at: new Date().toISOString() }).eq("id", input.product_id);
+  if (error) return { ok: false, error: error.code === "23505" ? "Ese código de barras ya está asignado a otro producto." : error.message };
+  return { ok: true };
+}
+
+/** Registra un recuento de stock para un producto en un almacén. */
+export async function adminInventoryCount(input: { product_id: string; warehouse_id: string; counted_qty: number; note?: string }): Promise<Res> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const qty = Math.max(0, Math.round(Number(input.counted_qty) || 0));
+  const { error } = await supabase.rpc("inventory_record_count", {
+    p_product_id: input.product_id, p_warehouse_id: input.warehouse_id, p_counted_qty: qty, p_note: input.note || null,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+/** Transfiere stock entre dos almacenes de forma atómica. */
+export async function adminInventoryTransfer(input: { product_id: string; from: string; to: string; qty: number; note?: string }): Promise<Res> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const qty = Math.round(Number(input.qty) || 0);
+  const { error } = await supabase.rpc("inventory_transfer", {
+    p_product_id: input.product_id, p_from: input.from, p_to: input.to, p_qty: qty, p_note: input.note || null,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function adminAddWarehouse(input: { id: string; name: string }): Promise<Res> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const id = input.id.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "-");
+  const name = input.name.trim();
+  if (!id || !name) return { ok: false, error: "Indica identificador y nombre del almacén." };
+  const { error } = await supabase.from("warehouses").insert({ id, name });
+  if (error) return { ok: false, error: error.code === "23505" ? "Ya existe un almacén con ese identificador." : error.message };
+  return { ok: true };
+}
+
+export type InvHistoryRow = {
+  id: string; created_at: string; type: "count" | "transfer";
+  product_title: string | null; sku: string | null;
+  warehouse_id: string | null; previous_qty: number | null; counted_qty: number | null;
+  from_warehouse_id: string | null; to_warehouse_id: string | null; transfer_qty: number | null;
+  from_previous_qty: number | null; to_previous_qty: number | null; note: string | null;
+};
+
+export async function adminInventoryHistory(input: { from?: string; to?: string; type?: "count" | "transfer" }): Promise<Res & { rows?: InvHistoryRow[] }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  let q = supabase.from("inventory_events").select("*").order("created_at", { ascending: false }).limit(500);
+  if (input.from) q = q.gte("created_at", input.from);
+  if (input.to) q = q.lte("created_at", input.to);
+  if (input.type) q = q.eq("type", input.type);
+  const { data, error } = await q;
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, rows: (data ?? []) as InvHistoryRow[] };
+}
