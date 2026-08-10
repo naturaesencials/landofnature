@@ -27,6 +27,45 @@ export async function adminUpdateProduct(input: {
   return { ok: true };
 }
 
+/** Edición completa de la ficha de producto (todos los campos salvo el stock, que se gestiona desde Inventario). */
+export async function adminUpdateProductFull(input: {
+  id: string; slug: string; brand: string; name: string; category: string; family: string | null;
+  size: string | null; sku: string; barcode: string | null; description: string | null; inci: string | null;
+  inci_verified: boolean; public_price: number; vat_rate: number; units_per_box: number | null;
+  weight_kg: number | null; low_stock_threshold: number; active: boolean; image_url: string | null;
+}): Promise<Res> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const slug = input.slug.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+  const brand = input.brand.trim(), name = input.name.trim(), category = input.category.trim(), sku = input.sku.trim();
+  if (!slug || !brand || !name || !category || !sku) return { ok: false, error: "Slug, marca, nombre, categoría y SKU son obligatorios." };
+  const price = Number.isFinite(input.public_price) ? Math.max(0, Math.round(input.public_price * 100) / 100) : 0;
+  const vat = Number.isFinite(input.vat_rate) ? Math.max(0, input.vat_rate) : 0.21;
+  const { error } = await supabase.from("products").update({
+    slug, brand, name, category,
+    family: input.family?.trim() || null,
+    size: input.size?.trim() || null,
+    sku,
+    barcode: input.barcode?.trim() || null,
+    description: input.description?.trim() || null,
+    inci: input.inci?.trim() || null,
+    inci_verified: input.inci_verified,
+    public_price: price,
+    vat_rate: vat,
+    units_per_box: input.units_per_box || null,
+    weight_kg: input.weight_kg || null,
+    low_stock_threshold: Number.isFinite(input.low_stock_threshold) ? Math.max(0, Math.round(input.low_stock_threshold)) : 20,
+    active: input.active,
+    image_url: input.image_url?.trim() || null,
+    updated_at: new Date().toISOString(),
+  }).eq("id", input.id);
+  if (error) {
+    if (error.code === "23505") return { ok: false, error: error.message.includes("barcode") ? "Ese código de barras ya está en uso." : error.message.includes("sku") ? "Ese SKU ya está en uso." : "Ese slug ya está en uso." };
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
+}
+
 export async function adminUpdateOrderStatus(input: { id: string; status: string }): Promise<Res> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };

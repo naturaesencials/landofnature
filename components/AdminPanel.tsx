@@ -3,13 +3,13 @@ import { useState, Fragment } from "react";
 import { euro, boxLabel } from "@/lib/types";
 import type { Tariff, Contract, ContractTarget, Commission, Invoice, Payment } from "@/lib/contracts";
 import type { Prod, Order, Req, Client, TariffPrice, ClientOrder, Warehouse, InventoryLevel } from "./admin/types";
-import { fdate, ORDER_STATES } from "./admin/types";
+import { fdate, ORDER_STATES, num } from "./admin/types";
 import Resumen from "./admin/Resumen";
 import Tarifas from "./admin/Tarifas";
 import Facturas from "./admin/Facturas";
 import Clientes from "./admin/Clientes";
 import Inventario from "./admin/Inventario";
-import { adminUpdateProduct, adminUpdateOrderStatus, adminUpdateRequest, adminShipOrder } from "@/app/admin/actions";
+import { adminUpdateProductFull, adminUpdateOrderStatus, adminUpdateRequest, adminShipOrder } from "@/app/admin/actions";
 
 type Props = {
   products: Prod[]; orders: Order[]; requests: Req[]; clients: Client[];
@@ -65,44 +65,110 @@ export default function AdminPanel(p: Props) {
 /* ---------------- Productos ---------------- */
 function Productos({ products }: { products: Prod[] }) {
   const [q, setQ] = useState("");
-  const [rows, setRows] = useState(() => products.map((p) => ({ ...p, _price: String(p.public_price ?? 0), _stock: String(p.stock ?? 0), _saved: false, _busy: false, _err: "" })));
-  const filtered = rows.filter((r) => `${r.brand} ${r.name} ${r.sku} ${r.family} ${r.category}`.toLowerCase().includes(q.toLowerCase()));
+  const [list, setList] = useState<Prod[]>(products);
+  const [open, setOpen] = useState<string | null>(null);
+  const filtered = list.filter((r) => `${r.brand} ${r.name} ${r.sku} ${r.barcode ?? ""} ${r.family} ${r.category}`.toLowerCase().includes(q.toLowerCase()));
 
-  const set = (id: string, patch: Partial<(typeof rows)[number]>) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
-
-  async function save(id: string) {
-    const r = rows.find((x) => x.id === id); if (!r) return;
-    set(id, { _busy: true, _err: "", _saved: false });
-    const res = await adminUpdateProduct({ id, public_price: parseFloat(r._price.replace(",", ".")) || 0, stock: parseInt(r._stock) || 0, active: r.active });
-    if (res.ok) set(id, { _busy: false, _saved: true, public_price: parseFloat(r._price.replace(",", ".")) || 0, stock: parseInt(r._stock) || 0 });
-    else set(id, { _busy: false, _err: res.error || "Error" });
+  function onSaved(updated: Prod) {
+    setList((rs) => rs.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)));
   }
 
   return (
     <div>
       <div className="adm-bar">
-        <input className="adm-search" placeholder="Buscar por nombre, marca, SKU…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <span className="adm-hint">Edita precio, stock y visibilidad. Precio 0 = «Próximamente».</span>
+        <input className="adm-search" placeholder="Buscar por nombre, marca, SKU o código de barras…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <span className="adm-hint">Pulsa un producto para ver y editar toda su ficha. El stock se gestiona desde la pestaña Inventario.</span>
       </div>
       <div className="adm-tablewrap">
         <table className="adm-table">
           <thead><tr><th>Producto</th><th>SKU</th><th className="r">Precio € (sin IVA)</th><th className="r">Stock</th><th className="c">Activo</th><th></th></tr></thead>
           <tbody>
             {filtered.map((r) => (
-              <tr key={r.id} className={r.public_price <= 0 ? "warn" : ""}>
-                <td><b>{r.brand} {r.name}</b><span className="sub">{boxLabel(r)}</span></td>
-                <td className="mono">{r.sku}</td>
-                <td className="r"><input className="adm-num" inputMode="decimal" value={r._price} onChange={(e) => set(r.id, { _price: e.target.value, _saved: false })} /></td>
-                <td className="r"><input className="adm-num sm" inputMode="numeric" value={r._stock} onChange={(e) => set(r.id, { _stock: e.target.value, _saved: false })} /></td>
-                <td className="c"><input type="checkbox" checked={r.active} onChange={(e) => set(r.id, { active: e.target.checked, _saved: false })} /></td>
-                <td className="c">
-                  <button className="adm-save" disabled={r._busy} onClick={() => save(r.id)}>{r._busy ? "…" : r._saved ? "✓" : "Guardar"}</button>
-                  {r._err && <div className="adm-err">{r._err}</div>}
-                </td>
-              </tr>
+              <Fragment key={r.id}>
+                <tr className={r.public_price <= 0 ? "warn" : ""}>
+                  <td><b>{r.brand} {r.name}</b><span className="sub">{boxLabel(r)}</span></td>
+                  <td className="mono">{r.sku}</td>
+                  <td className="r">{euro(r.public_price)}</td>
+                  <td className="r">{r.stock}</td>
+                  <td className="c">{r.active ? "✓" : "—"}</td>
+                  <td className="c"><button className="adm-link" onClick={() => setOpen(open === r.id ? null : r.id)}>{open === r.id ? "Ocultar" : "Editar"}</button></td>
+                </tr>
+                {open === r.id && (
+                  <tr className="adm-detail"><td colSpan={6}>
+                    <ProductoDetalle product={r} onSaved={(u) => { onSaved(u); setOpen(null); }} onCancel={() => setOpen(null)} />
+                  </td></tr>
+                )}
+              </Fragment>
             ))}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+function ProductoDetalle({ product, onSaved, onCancel }: { product: Prod; onSaved: (p: Prod) => void; onCancel: () => void }) {
+  const [f, setF] = useState({
+    slug: product.slug || "", brand: product.brand, name: product.name, category: product.category,
+    family: product.family || "", size: product.size || "", sku: product.sku, barcode: product.barcode || "",
+    description: product.description || "", inci: product.inci || "", inci_verified: !!product.inci_verified,
+    public_price: String(product.public_price ?? 0), vat_rate: String(product.vat_rate ?? 0.21),
+    units_per_box: String(product.units_per_box ?? ""), weight_kg: String(product.weight_kg ?? ""),
+    low_stock_threshold: String(product.low_stock_threshold ?? 20), active: product.active,
+    image_url: product.image_url || "",
+  });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const set = (patch: Partial<typeof f>) => setF((x) => ({ ...x, ...patch }));
+
+  async function save() {
+    setBusy(true); setErr("");
+    const res = await adminUpdateProductFull({
+      id: product.id, slug: f.slug, brand: f.brand, name: f.name, category: f.category,
+      family: f.family || null, size: f.size || null, sku: f.sku, barcode: f.barcode || null,
+      description: f.description || null, inci: f.inci || null, inci_verified: f.inci_verified,
+      public_price: num(f.public_price), vat_rate: num(f.vat_rate),
+      units_per_box: f.units_per_box.trim() ? parseInt(f.units_per_box) : null,
+      weight_kg: f.weight_kg.trim() ? num(f.weight_kg) : null,
+      low_stock_threshold: parseInt(f.low_stock_threshold) || 20, active: f.active, image_url: f.image_url || null,
+    });
+    setBusy(false);
+    if (!res.ok) { setErr(res.error || "Error"); return; }
+    onSaved({
+      ...product, slug: f.slug, brand: f.brand, name: f.name, category: f.category,
+      family: f.family || null, size: f.size || null, sku: f.sku, barcode: f.barcode || null,
+      description: f.description || null, inci: f.inci || null, inci_verified: f.inci_verified,
+      public_price: num(f.public_price), vat_rate: num(f.vat_rate),
+      units_per_box: f.units_per_box.trim() ? parseInt(f.units_per_box) : null,
+      weight_kg: f.weight_kg.trim() ? num(f.weight_kg) : null,
+      low_stock_threshold: parseInt(f.low_stock_threshold) || 20, active: f.active, image_url: f.image_url || null,
+    });
+  }
+
+  return (
+    <div className="adm-detail-grid">
+      <label>Marca<input className="adm-input" value={f.brand} onChange={(e) => set({ brand: e.target.value })} /></label>
+      <label>Nombre<input className="adm-input" value={f.name} onChange={(e) => set({ name: e.target.value })} /></label>
+      <label>Categoría<input className="adm-input" value={f.category} onChange={(e) => set({ category: e.target.value })} /></label>
+      <label>Familia<input className="adm-input" value={f.family} onChange={(e) => set({ family: e.target.value })} /></label>
+      <label>Tamaño / formato<input className="adm-input" value={f.size} onChange={(e) => set({ size: e.target.value })} /></label>
+      <label>Unidades por caja<input className="adm-input" inputMode="numeric" value={f.units_per_box} onChange={(e) => set({ units_per_box: e.target.value })} /></label>
+      <label>SKU<input className="adm-input mono" value={f.sku} onChange={(e) => set({ sku: e.target.value })} /></label>
+      <label>Código de barras<input className="adm-input mono" value={f.barcode} onChange={(e) => set({ barcode: e.target.value })} placeholder="Se puede asignar también desde Inventario → Escanear" /></label>
+      <label>Slug (URL)<input className="adm-input mono" value={f.slug} onChange={(e) => set({ slug: e.target.value })} /></label>
+      <label>Imagen (URL)<input className="adm-input" value={f.image_url} onChange={(e) => set({ image_url: e.target.value })} /></label>
+      <label>Precio € (sin IVA)<input className="adm-input" inputMode="decimal" value={f.public_price} onChange={(e) => set({ public_price: e.target.value })} /></label>
+      <label>IVA (ej. 0,21)<input className="adm-input" inputMode="decimal" value={f.vat_rate} onChange={(e) => set({ vat_rate: e.target.value })} /></label>
+      <label>Peso (kg)<input className="adm-input" inputMode="decimal" value={f.weight_kg} onChange={(e) => set({ weight_kg: e.target.value })} /></label>
+      <label>Umbral de stock bajo<input className="adm-input" inputMode="numeric" value={f.low_stock_threshold} onChange={(e) => set({ low_stock_threshold: e.target.value })} /></label>
+      <label style={{ gridColumn: "1 / -1" }}>Descripción<textarea className="adm-input" rows={3} value={f.description} onChange={(e) => set({ description: e.target.value })} /></label>
+      <label style={{ gridColumn: "1 / -1" }}>INCI<textarea className="adm-input" rows={2} value={f.inci} onChange={(e) => set({ inci: e.target.value })} /></label>
+      <label className="adm-check"><input type="checkbox" checked={f.inci_verified} onChange={(e) => set({ inci_verified: e.target.checked })} /> INCI verificado</label>
+      <label className="adm-check"><input type="checkbox" checked={f.active} onChange={(e) => set({ active: e.target.checked })} /> Activo (visible en la tienda)</label>
+      <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8, alignItems: "center" }}>
+        <button className="adm-save" disabled={busy} onClick={save}>{busy ? "…" : "Guardar cambios"}</button>
+        <button className="adm-link" onClick={onCancel}>Cancelar</button>
+        {err && <span className="adm-err">{err}</span>}
       </div>
     </div>
   );

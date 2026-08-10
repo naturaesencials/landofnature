@@ -1,7 +1,9 @@
 export type Prod = {
-  id: string; brand: string; name: string; size: string | null; sku: string;
+  id: string; slug?: string; brand: string; name: string; size: string | null; sku: string;
   public_price: number; stock: number; active: boolean; units_per_box: number | null;
   family: string | null; category: string; barcode?: string | null; image_url?: string | null;
+  description?: string | null; inci?: string | null; inci_verified?: boolean;
+  vat_rate?: number; weight_kg?: number | null; low_stock_threshold?: number;
 };
 
 export type Warehouse = { id: string; name: string; sort: number };
