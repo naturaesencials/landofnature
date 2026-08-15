@@ -509,36 +509,87 @@ async function resolveCanonicalLote(
 export type ErpLoteDetail = {
   lote: { id: number; lote: string; product_code: string | null; product_name: string | null; cantidad: number | null; cantidad_real: number | null; ubicacion: string | null; creado_el: string | null } | null;
   orders: { referencia: string; product_code: string | null; product_name: string | null; cantidad: number | null; estado: string | null; fecha_inicio: string | null; fecha_final: string | null; bom: string | null }[];
+  rawMaterials: { order_referencia: string; component_code: string | null; component_name: string | null; component_lote: string | null; cantidad: number | null }[];
   components: { order_referencia: string | null; component_code: string | null; component_name: string | null; cantidad_consumida: number | null }[];
   moves: { id: number; referencia: string | null; desde: string | null; hasta: string | null; fecha: string | null; cantidad_hecha: number | null; estado: string | null }[];
   exactSales: { numero: string; fecha: string | null; partner: string | null; cantidad: number | null; product_code: string | null; product_name: string | null; delivery_referencia: string }[];
   relatedSales: { numero: string; fecha: string | null; partner: string | null; cantidad: number | null; product_code: string | null; product_name: string | null }[];
 };
 
-/** Devuelve la cadena completa de trazabilidad para un lote: orden de fabricación, componentes consumidos, movimientos de stock
- *  y facturas de venta. Primero intenta la cadena exacta (lote -> albarán -> pedido de venta -> factura); si no hay match exacto,
- *  cae a una relación aproximada por producto (misma referencia) marcada explícitamente como tal. */
-export async function adminErpLoteDetail(loteInput: string): Promise<Res & { detail?: ErpLoteDetail; canonicalLote?: string }> {
+/** Un mismo número de lote puede reutilizarse en distintos productos (granel reenvasado en varios
+ *  formatos, etc.) — el ~34% de los lotes del histórico están compartidos. Esta función devuelve, para
+ *  un número de lote (ya normalizado), los productos distintos a los que pertenece, para que el usuario
+ *  desambigüe antes de generar el informe. */
+export async function adminErpLoteCandidates(loteInput: string): Promise<Res & {
+  canonicalLote?: string;
+  candidates?: { product_code: string | null; product_name: string | null }[];
+}> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
   const lote = await resolveCanonicalLote(supabase, loteInput.trim());
-  const [lotRes, ordersRes, movesRes] = await Promise.all([
-    supabase.from("erp_stock_lots").select("id,lote,product_code,product_name,cantidad,cantidad_real,ubicacion,creado_el").eq("lote", lote).limit(1).maybeSingle(),
-    supabase.from("erp_production_orders").select("referencia,product_code,product_name,cantidad,estado,fecha_inicio,fecha_final,bom").eq("lote", lote),
-    supabase.from("erp_stock_moves").select("id,referencia,desde,hasta,fecha,cantidad_hecha,estado").eq("lote", lote).order("fecha", { ascending: true }).limit(200),
-  ]);
-  const orderRefs = (ordersRes.data ?? []).map((o) => o.referencia).filter(Boolean);
+  const { data } = await supabase.from("erp_stock_lots").select("product_code,product_name").eq("lote", lote);
+  let candidates = (data ?? []) as { product_code: string | null; product_name: string | null }[];
+  if (!candidates.length) {
+    // fallback: productos vistos en movimientos de stock para ese lote (por si no está en erp_stock_lots)
+    const { data: mv } = await supabase.from("erp_stock_moves").select("product_code,product_name").eq("lote", lote).limit(200);
+    const seen = new Map<string, { product_code: string | null; product_name: string | null }>();
+    for (const m of mv ?? []) if (m.product_code && !seen.has(m.product_code)) seen.set(m.product_code, m);
+    candidates = Array.from(seen.values());
+  }
+  return { ok: true, canonicalLote: lote, candidates };
+}
+
+/** Devuelve la cadena completa de trazabilidad ISO para un lote de producto (identificado por lote +
+ *  código de producto, ya que el número de lote solo no es único): orden de fabricación, materias primas
+ *  consumidas CON SU PROPIO LOTE (extraído de los movimientos de fabricación, no de la BOM genérica),
+ *  lista de materiales de referencia, movimientos de stock y facturas de venta (exacto vía albarán →
+ *  pedido de venta, con fallback aproximado por producto si no hay match exacto). */
+export async function adminErpLoteDetail(loteInput: string, productCode?: string): Promise<Res & { detail?: ErpLoteDetail; canonicalLote?: string }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const lote = await resolveCanonicalLote(supabase, loteInput.trim());
+
+  let lotQuery = supabase.from("erp_stock_lots").select("id,lote,product_code,product_name,cantidad,cantidad_real,ubicacion,creado_el").eq("lote", lote);
+  let ordersQuery = supabase.from("erp_production_orders").select("referencia,product_code,product_name,cantidad,estado,fecha_inicio,fecha_final,bom").eq("lote", lote);
+  let movesQuery = supabase.from("erp_stock_moves").select("id,referencia,desde,hasta,fecha,cantidad_hecha,estado,product_code").eq("lote", lote).order("fecha", { ascending: true }).limit(200);
+  if (productCode) {
+    lotQuery = lotQuery.eq("product_code", productCode);
+    ordersQuery = ordersQuery.eq("product_code", productCode);
+    movesQuery = movesQuery.eq("product_code", productCode);
+  }
+  const [lotRes, ordersRes, movesRaw] = await Promise.all([lotQuery.limit(1).maybeSingle(), ordersQuery, movesQuery]);
+  const movesData = (movesRaw.data ?? []) as (ErpLoteDetail["moves"][number] & { product_code?: string | null })[];
+
+  const orderRefs = Array.from(new Set([
+    ...(ordersRes.data ?? []).map((o) => o.referencia),
+    // también las órdenes vistas en los movimientos de recepción de este lote (desde=Production)
+    ...movesData.filter((m) => (m.desde || "").includes("Production")).map((m) => m.referencia),
+  ].filter(Boolean))) as string[];
+
   let components: ErpLoteDetail["components"] = [];
+  let rawMaterials: ErpLoteDetail["rawMaterials"] = [];
   if (orderRefs.length) {
-    const { data } = await supabase.from("erp_production_components")
-      .select("order_referencia,component_code,component_name,cantidad_consumida")
-      .in("order_referencia", orderRefs);
-    components = (data ?? []) as ErpLoteDetail["components"];
+    const [compRes, rawRes] = await Promise.all([
+      supabase.from("erp_production_components").select("order_referencia,component_code,component_name,cantidad_consumida").in("order_referencia", orderRefs),
+      // consumo real de materia prima CON LOTE: movimientos hacia "Virtual Locations/Production" de esas mismas órdenes
+      supabase.from("erp_stock_moves").select("referencia,product_code,product_name,lote,cantidad_hecha").in("referencia", orderRefs).ilike("hasta", "%Production%"),
+    ]);
+    components = (compRes.data ?? []) as ErpLoteDetail["components"];
+    rawMaterials = (rawRes.data ?? []).map((m) => ({
+      order_referencia: m.referencia as string,
+      component_code: m.product_code,
+      component_name: m.product_name,
+      component_lote: m.lote,
+      cantidad: m.cantidad_hecha,
+    }));
   }
 
-  // ---- Cadena EXACTA: lote -> albarán de salida -> documento origen (pedido venta) -> factura ----
-  const outboundMoves = (movesRes.data ?? []).filter((m) => (m.hasta || "").toLowerCase().includes("customer") && m.referencia);
+  // ---- Cadena EXACTA de venta: lote+producto -> albarán de salida -> documento origen -> factura ----
+  const outboundMoves = movesData.filter((m) => (m.hasta || "").toLowerCase().includes("customer") && m.referencia);
   const deliveryRefs = Array.from(new Set(outboundMoves.map((m) => m.referencia as string)));
+  const resolvedProductCode = productCode || lotRes.data?.product_code || (ordersRes.data ?? [])[0]?.product_code || null;
+  const resolvedProductName = lotRes.data?.product_name || (ordersRes.data ?? [])[0]?.product_name || null;
+
   let exactSales: ErpLoteDetail["exactSales"] = [];
   const matchedInvoiceNumeros = new Set<string>();
   if (deliveryRefs.length) {
@@ -546,13 +597,12 @@ export async function adminErpLoteDetail(loteInput: string): Promise<Res & { det
     const origenes = Array.from(new Set((deliveries ?? []).map((d) => d.documento_origen).filter(Boolean))) as string[];
     if (origenes.length) {
       const { data: invs } = await supabase.from("erp_invoices_sale").select("numero,fecha,partner,origen").in("origen", origenes);
-      const productCode = lotRes.data?.product_code || (ordersRes.data ?? [])[0]?.product_code || null;
       const refToOrigen = new Map((deliveries ?? []).map((d) => [d.referencia, d.documento_origen]));
       for (const inv of invs ?? []) {
         const deliveryRef = deliveryRefs.find((r) => refToOrigen.get(r) === inv.origen);
         exactSales.push({
           numero: inv.numero, fecha: inv.fecha, partner: inv.partner,
-          cantidad: null, product_code: productCode, product_name: lotRes.data?.product_name ?? null,
+          cantidad: null, product_code: resolvedProductCode, product_name: resolvedProductName,
           delivery_referencia: deliveryRef || "",
         });
         matchedInvoiceNumeros.add(inv.numero);
@@ -561,13 +611,12 @@ export async function adminErpLoteDetail(loteInput: string): Promise<Res & { det
     }
   }
 
-  // ---- Fallback aproximado por producto, excluyendo las ya vinculadas de forma exacta ----
-  const productCode = lotRes.data?.product_code || (ordersRes.data ?? [])[0]?.product_code || null;
+  // ---- Fallback aproximado por producto (solo si no hubo match exacto) ----
   let relatedSales: ErpLoteDetail["relatedSales"] = [];
-  if (productCode) {
+  if (resolvedProductCode && !exactSales.length) {
     const { data } = await supabase.from("erp_invoice_sale_lines")
       .select("invoice_numero,cantidad,product_code,product_name")
-      .eq("product_code", productCode)
+      .eq("product_code", resolvedProductCode)
       .limit(100);
     const numeros = Array.from(new Set((data ?? []).map((l) => l.invoice_numero).filter((n) => n && !matchedInvoiceNumeros.has(n)))) as string[];
     if (numeros.length) {
@@ -592,8 +641,9 @@ export async function adminErpLoteDetail(loteInput: string): Promise<Res & { det
     detail: {
       lote: (lotRes.data ?? null) as ErpLoteDetail["lote"],
       orders: (ordersRes.data ?? []) as ErpLoteDetail["orders"],
+      rawMaterials,
       components,
-      moves: (movesRes.data ?? []) as ErpLoteDetail["moves"],
+      moves: movesData,
       exactSales,
       relatedSales,
     },

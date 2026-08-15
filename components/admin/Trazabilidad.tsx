@@ -3,9 +3,11 @@ import { useState } from "react";
 import { euro } from "@/lib/types";
 import { fdate } from "./types";
 import {
-  adminErpSearch, adminErpLoteDetail,
+  adminErpSearch, adminErpLoteDetail, adminErpLoteCandidates,
   type ErpSearchResult, type ErpLoteDetail,
 } from "@/app/admin/actions";
+
+type Candidate = { product_code: string | null; product_name: string | null };
 
 export default function Trazabilidad() {
   const [q, setQ] = useState("");
@@ -18,26 +20,45 @@ export default function Trazabilidad() {
   const [detail, setDetail] = useState<ErpLoteDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [candidates, setCandidates] = useState<Candidate[] | null>(null);
+  const [pendingLote, setPendingLote] = useState<string | null>(null);
 
   async function doSearch(e?: React.FormEvent) {
     e?.preventDefault();
     if (q.trim().length < 2) return;
-    setLoading(true); setError(null); setLote(null); setDetail(null);
+    setLoading(true); setError(null); setLote(null); setDetail(null); setCandidates(null);
     const res = await adminErpSearch(q);
     setLoading(false);
     if (!res.ok) { setError(res.error || "Error"); return; }
     setResult(res.result ?? null);
   }
 
-  async function openLote(l: string) {
+  /** Paso 1: si el lote pertenece a varios productos, pedimos cuál antes de generar el informe. */
+  async function startLote(l: string) {
     const clean = l.trim();
     if (!clean) return;
-    setLote(clean); setDetailLoading(true); setDetail(null); setDetailError(null);
-    const res = await adminErpLoteDetail(clean);
+    setCandidates(null); setDetailError(null); setDetail(null); setLote(null);
+    setDetailLoading(true);
+    const res = await adminErpLoteCandidates(clean);
+    setDetailLoading(false);
+    if (!res.ok) { setDetailError(res.error || "Error"); return; }
+    const cands = res.candidates ?? [];
+    if (cands.length > 1) {
+      setPendingLote(res.canonicalLote || clean);
+      setCandidates(cands);
+      return;
+    }
+    // 0 o 1 producto: generamos directamente
+    await openLote(clean, cands[0]?.product_code || undefined);
+  }
+
+  async function openLote(l: string, productCode?: string) {
+    setLote(l); setDetailLoading(true); setDetail(null); setDetailError(null); setCandidates(null);
+    const res = await adminErpLoteDetail(l, productCode);
     setDetailLoading(false);
     if (!res.ok) { setDetailError(res.error || "No se pudo generar el informe."); return; }
     if (!res.detail?.lote && !res.detail?.orders.length && !res.detail?.moves.length) {
-      setDetailError(`No se encontró ningún dato de trazabilidad para el lote "${clean}".`);
+      setDetailError(`No se encontró ningún dato de trazabilidad para el lote "${l}"${productCode ? ` (${productCode})` : ""}.`);
       return;
     }
     if (res.canonicalLote) setLote(res.canonicalLote);
@@ -50,10 +71,11 @@ export default function Trazabilidad() {
       <div className="no-print" style={{ background: "var(--cream)", border: "1px solid var(--line)", borderRadius: 6, padding: 16, marginBottom: 24 }}>
         <h3 style={{ marginTop: 0 }}>Generar informe de trazabilidad</h3>
         <p className="lead" style={{ marginTop: 0, marginBottom: 12 }}>
-          Introduce el número de lote y genera automáticamente el informe completo: orden de fabricación, componentes consumidos, movimientos de stock y facturas de venta relacionadas.
+          Introduce el número de lote. Si ese número pertenece a más de un producto (habitual cuando un
+          granel se reenvasa en varios formatos), te preguntamos cuál antes de generar el informe.
         </p>
         <form
-          onSubmit={(e) => { e.preventDefault(); openLote(loteInput); }}
+          onSubmit={(e) => { e.preventDefault(); startLote(loteInput); }}
           style={{ display: "flex", gap: 8 }}
         >
           <input
@@ -61,9 +83,27 @@ export default function Trazabilidad() {
             placeholder="Número de lote"
             style={{ flex: 1, maxWidth: 320 }}
           />
-          <button className="btn" disabled={detailLoading}>{detailLoading ? "Generando…" : "Generar informe"}</button>
+          <button className="btn" disabled={detailLoading}>{detailLoading ? "Buscando…" : "Generar informe"}</button>
         </form>
-        {detailError && <p style={{ color: "#b00020", marginBottom: 0 }}>{detailError}</p>}
+
+        {candidates && candidates.length > 1 && (
+          <div style={{ marginTop: 14 }}>
+            <p style={{ marginBottom: 8 }}>
+              El lote <code>{pendingLote}</code> pertenece a {candidates.length} productos distintos. ¿De cuál quieres el informe?
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {candidates.map((c, idx) => (
+                <button
+                  key={idx} className="btn-sm"
+                  onClick={() => openLote(pendingLote as string, c.product_code || undefined)}
+                >
+                  {c.product_name || c.product_code} {c.product_code ? `(${c.product_code})` : ""}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {detailError && <p style={{ color: "#b00020", marginBottom: 0, marginTop: 10 }}>{detailError}</p>}
       </div>
 
       {/* ---- Búsqueda general (por si no se sabe el número exacto de lote) ---- */}
@@ -80,7 +120,7 @@ export default function Trazabilidad() {
         {error && <p style={{ color: "#b00020" }}>{error}</p>}
       </div>
 
-      {result && !lote && (
+      {result && !lote && !candidates && (
         <div className="no-print" style={{ display: "grid", gap: 24 }}>
           {result.lots.length > 0 && (
             <section>
@@ -95,7 +135,7 @@ export default function Trazabilidad() {
                       <td>{l.cantidad ?? "—"}</td>
                       <td>{l.ubicacion || "—"}</td>
                       <td>{l.creado_el ? fdate(l.creado_el) : "—"}</td>
-                      <td><button className="btn-sm" onClick={() => openLote(l.lote)}>Informe →</button></td>
+                      <td><button className="btn-sm" onClick={() => openLote(l.lote, l.product_code || undefined)}>Informe →</button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -117,7 +157,7 @@ export default function Trazabilidad() {
                       <td>{o.estado || "—"}</td>
                       <td>{o.fecha_final ? fdate(o.fecha_final) : "—"}</td>
                       <td>{o.lote ? <code>{o.lote}</code> : "—"}</td>
-                      <td>{o.lote && <button className="btn-sm" onClick={() => openLote(o.lote as string)}>Informe →</button>}</td>
+                      <td>{o.lote && <button className="btn-sm" onClick={() => openLote(o.lote as string, o.product_code || undefined)}>Informe →</button>}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -223,8 +263,32 @@ export default function Trazabilidad() {
             </section>
 
             <section style={{ marginBottom: 20 }}>
-              <h4>Componentes consumidos {detail.components.length ? `(${detail.components.length})` : ""}</h4>
-              {detail.components.length ? (
+              <h4>Materias primas y componentes utilizados — con lote {detail.rawMaterials.length ? `(${detail.rawMaterials.length})` : ""}</h4>
+              {detail.rawMaterials.length ? (
+                <>
+                  <p className="lead" style={{ fontSize: 12 }}>
+                    Extraído directamente de los movimientos de fabricación (no de la lista de materiales genérica): cada línea es el lote real de materia prima/envase consumido en esta orden.
+                  </p>
+                  <table className="adm-table">
+                    <thead><tr><th>Orden</th><th>Materia prima / componente</th><th>Lote</th><th>Cantidad</th></tr></thead>
+                    <tbody>
+                      {detail.rawMaterials.map((r, idx) => (
+                        <tr key={idx}>
+                          <td><code>{r.order_referencia}</code></td>
+                          <td>{r.component_name || r.component_code || "—"}</td>
+                          <td>{r.component_lote ? <code>{r.component_lote}</code> : <span style={{ color: "var(--muted)" }}>sin lote registrado</span>}</td>
+                          <td>{r.cantidad ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              ) : <p className="lead">No se encontró consumo de materias primas con lote para este lote de fabricación.</p>}
+            </section>
+
+            {detail.components.length > 0 && (
+              <section style={{ marginBottom: 20 }}>
+                <h4>Lista de materiales (BOM) de referencia ({detail.components.length})</h4>
                 <table className="adm-table">
                   <thead><tr><th>Orden</th><th>Componente</th><th>Cantidad</th></tr></thead>
                   <tbody>
@@ -237,8 +301,8 @@ export default function Trazabilidad() {
                     ))}
                   </tbody>
                 </table>
-              ) : <p className="lead">Sin componentes registrados.</p>}
-            </section>
+              </section>
+            )}
 
             <section style={{ marginBottom: 20 }}>
               <h4>Movimientos de stock {detail.moves.length ? `(${detail.moves.length})` : ""}</h4>
