@@ -9,6 +9,7 @@ import Tarifas from "./admin/Tarifas";
 import Facturas from "./admin/Facturas";
 import Clientes from "./admin/Clientes";
 import Inventario from "./admin/Inventario";
+import Trazabilidad from "./admin/Trazabilidad";
 import { adminUpdateProductFull, adminUpdateOrderStatus, adminUpdateRequest, adminShipOrder } from "@/app/admin/actions";
 
 type Props = {
@@ -19,7 +20,7 @@ type Props = {
   warehouses: Warehouse[]; inventoryLevels: InventoryLevel[];
 };
 
-type Tab = "resumen" | "productos" | "tarifas" | "pedidos" | "facturas" | "clientes" | "solicitudes" | "inventario";
+type Tab = "resumen" | "productos" | "tarifas" | "pedidos" | "facturas" | "clientes" | "solicitudes" | "inventario" | "trazabilidad";
 
 export default function AdminPanel(p: Props) {
   const pendingReq = p.requests.filter((r) => r.status === "pending").length;
@@ -32,6 +33,7 @@ export default function AdminPanel(p: Props) {
         <button className={tab === "resumen" ? "on" : ""} onClick={() => setTab("resumen")}>Resumen</button>
         <button className={tab === "productos" ? "on" : ""} onClick={() => setTab("productos")}>Productos <span>{p.products.length}</span></button>
         <button className={tab === "inventario" ? "on" : ""} onClick={() => setTab("inventario")}>Inventario</button>
+        <button className={tab === "trazabilidad" ? "on" : ""} onClick={() => setTab("trazabilidad")}>Trazabilidad</button>
         <button className={tab === "tarifas" ? "on" : ""} onClick={() => setTab("tarifas")}>Tarifas <span>{p.tariffs.length}</span></button>
         <button className={tab === "pedidos" ? "on" : ""} onClick={() => setTab("pedidos")}>Pedidos <span>{p.orders.length}</span></button>
         <button className={tab === "facturas" ? "on" : ""} onClick={() => setTab("facturas")}>Facturas {openInvoices > 0 ? <span>{openInvoices}</span> : null}</button>
@@ -48,6 +50,7 @@ export default function AdminPanel(p: Props) {
       )}
       {tab === "productos" && <Productos products={p.products} />}
       {tab === "inventario" && <Inventario products={p.products} warehouses={p.warehouses} levels={p.inventoryLevels} />}
+      {tab === "trazabilidad" && <Trazabilidad />}
       {tab === "tarifas" && <Tarifas products={p.products} tariffs={p.tariffs} tariffPrices={p.tariffPrices} />}
       {tab === "pedidos" && <Pedidos orders={p.orders} />}
       {tab === "facturas" && <Facturas invoices={p.invoices} payments={p.payments} clients={p.clients} contracts={p.contracts} />}

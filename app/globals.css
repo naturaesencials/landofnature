@@ -27,6 +27,8 @@ button{font-family:inherit}
 
 /* buttons */
 .btn{font-family:var(--font-mono),monospace;font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--ink);background:var(--ink);color:var(--cream);padding:12px 20px;border-radius:2px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:.16s}
+.btn-sm{font-family:var(--font-mono),monospace;font-size:11px;letter-spacing:.04em;border:1px solid var(--ink);background:transparent;color:var(--ink);padding:5px 10px;border-radius:2px;cursor:pointer;white-space:nowrap;transition:.16s}
+.btn-sm:hover{background:var(--ink);color:var(--cream)}
 .btn:hover{background:var(--espresso-2);border-color:var(--espresso-2)}
 .btn.cta{background:var(--cta);border-color:var(--cta)}
 .btn.cta:hover{background:var(--cta-h);border-color:var(--cta-h)}

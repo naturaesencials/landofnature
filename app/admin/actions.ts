@@ -435,3 +435,80 @@ export async function adminInventoryHistory(input: { from?: string; to?: string;
   if (error) return { ok: false, error: error.message };
   return { ok: true, rows: (data ?? []) as InvHistoryRow[] };
 }
+
+/* ---------------- Histórico ERP (Odoo) / Trazabilidad ---------------- */
+
+export type ErpSearchResult = {
+  lots: { id: number; lote: string; product_code: string | null; product_name: string | null; cantidad: number | null; ubicacion: string | null; creado_el: string | null }[];
+  orders: { referencia: string; product_code: string | null; product_name: string | null; cantidad: number | null; estado: string | null; fecha_final: string | null; lote: string | null }[];
+  salesInvoices: { numero: string; partner: string | null; fecha: string | null; total: number | null; estado: string | null }[];
+  purchaseInvoices: { numero: string; partner: string | null; fecha: string | null; total: number | null; estado: string | null }[];
+};
+
+export async function adminErpSearch(query: string): Promise<Res & { result?: ErpSearchResult }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const q = query.trim();
+  if (q.length < 2) return { ok: false, error: "Escribe al menos 2 caracteres." };
+  const like = `%${q}%`;
+
+  const [lots, orders, salesInvoices, purchaseInvoices] = await Promise.all([
+    supabase.from("erp_stock_lots").select("id,lote,product_code,product_name,cantidad,ubicacion,creado_el")
+      .or(`lote.ilike.${like},product_code.ilike.${like},product_name.ilike.${like}`)
+      .order("creado_el", { ascending: false }).limit(30),
+    supabase.from("erp_production_orders").select("referencia,product_code,product_name,cantidad,estado,fecha_final,lote")
+      .or(`referencia.ilike.${like},lote.ilike.${like},product_code.ilike.${like},product_name.ilike.${like}`)
+      .order("fecha_final", { ascending: false }).limit(30),
+    supabase.from("erp_invoices_sale").select("numero,partner,fecha,total,estado")
+      .or(`numero.ilike.${like},partner.ilike.${like}`)
+      .order("fecha", { ascending: false }).limit(30),
+    supabase.from("erp_invoices_purchase").select("numero,partner,fecha,total,estado")
+      .or(`numero.ilike.${like},partner.ilike.${like}`)
+      .order("fecha", { ascending: false }).limit(30),
+  ]);
+
+  return {
+    ok: true,
+    result: {
+      lots: (lots.data ?? []) as ErpSearchResult["lots"],
+      orders: (orders.data ?? []) as ErpSearchResult["orders"],
+      salesInvoices: (salesInvoices.data ?? []) as ErpSearchResult["salesInvoices"],
+      purchaseInvoices: (purchaseInvoices.data ?? []) as ErpSearchResult["purchaseInvoices"],
+    },
+  };
+}
+
+export type ErpLoteDetail = {
+  lote: { id: number; lote: string; product_code: string | null; product_name: string | null; cantidad: number | null; cantidad_real: number | null; ubicacion: string | null; creado_el: string | null } | null;
+  orders: { referencia: string; product_code: string | null; product_name: string | null; cantidad: number | null; estado: string | null; fecha_inicio: string | null; fecha_final: string | null; bom: string | null }[];
+  components: { order_referencia: string | null; component_code: string | null; component_name: string | null; cantidad_consumida: number | null }[];
+  moves: { id: number; referencia: string | null; desde: string | null; hasta: string | null; fecha: string | null; cantidad_hecha: number | null; estado: string | null }[];
+};
+
+/** Devuelve la cadena completa de trazabilidad para un lote: orden de fabricación, componentes consumidos y movimientos de stock. */
+export async function adminErpLoteDetail(lote: string): Promise<Res & { detail?: ErpLoteDetail }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const [lotRes, ordersRes, movesRes] = await Promise.all([
+    supabase.from("erp_stock_lots").select("id,lote,product_code,product_name,cantidad,cantidad_real,ubicacion,creado_el").eq("lote", lote).limit(1).maybeSingle(),
+    supabase.from("erp_production_orders").select("referencia,product_code,product_name,cantidad,estado,fecha_inicio,fecha_final,bom").eq("lote", lote),
+    supabase.from("erp_stock_moves").select("id,referencia,desde,hasta,fecha,cantidad_hecha,estado").eq("lote", lote).order("fecha", { ascending: true }).limit(200),
+  ]);
+  const orderRefs = (ordersRes.data ?? []).map((o) => o.referencia).filter(Boolean);
+  let components: ErpLoteDetail["components"] = [];
+  if (orderRefs.length) {
+    const { data } = await supabase.from("erp_production_components")
+      .select("order_referencia,component_code,component_name,cantidad_consumida")
+      .in("order_referencia", orderRefs);
+    components = (data ?? []) as ErpLoteDetail["components"];
+  }
+  return {
+    ok: true,
+    detail: {
+      lote: (lotRes.data ?? null) as ErpLoteDetail["lote"],
+      orders: (ordersRes.data ?? []) as ErpLoteDetail["orders"],
+      components,
+      moves: (movesRes.data ?? []) as ErpLoteDetail["moves"],
+    },
+  };
+}
