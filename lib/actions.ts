@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "./supabase/server";
+import { generateInvoiceForOrder } from "./invoice";
 
 export type ActionResult = { ok: boolean; error?: string; orderNo?: number };
 
@@ -101,5 +102,19 @@ export async function createGuestOrder(payload: {
     p_items: payload.items,
   });
   if (error) return { ok: false, error: error.message || "No se pudo crear el pedido." };
-  return { ok: true, orderNo: data as number };
+  const orderNo = data as number;
+
+  // Factura al momento de la compra: no bloquea la confirmación del pedido si falla,
+  // pero queda registrado en consola para regenerarla manualmente desde el admin si hace falta.
+  try {
+    const { data: ord } = await supabase.from("orders").select("id").eq("order_no", orderNo).single();
+    if (ord?.id) {
+      const inv = await generateInvoiceForOrder(ord.id);
+      if (!inv.ok) console.error("Factura no generada para pedido", orderNo, inv.error);
+    }
+  } catch (e) {
+    console.error("Error generando factura para pedido", orderNo, e);
+  }
+
+  return { ok: true, orderNo };
 }
