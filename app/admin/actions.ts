@@ -506,6 +506,36 @@ async function resolveCanonicalLote(
   return match || input;
 }
 
+/** Historial completo de facturas de compra de un producto (materia prima/componente), independientemente
+ *  del lote — para ver a qué proveedores se le ha comprado ese producto a lo largo del tiempo. */
+export type PurchaseHistoryRow = {
+  numero: string; referencia_proveedor: string | null; partner: string | null; fecha: string | null;
+  cantidad: number | null; precio_unitario: number | null; subtotal: number | null;
+};
+export async function adminErpProductPurchaseHistory(productCode: string): Promise<Res & { rows?: PurchaseHistoryRow[] }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const { data: lines, error } = await supabase.from("erp_invoice_purchase_lines")
+    .select("invoice_numero,cantidad,precio_unitario,subtotal")
+    .eq("product_code", productCode)
+    .limit(200);
+  if (error) return { ok: false, error: error.message };
+  const numeros = Array.from(new Set((lines ?? []).map((l) => l.invoice_numero).filter(Boolean))) as string[];
+  if (!numeros.length) return { ok: true, rows: [] };
+  const { data: invs } = await supabase.from("erp_invoices_purchase")
+    .select("numero,referencia_proveedor,partner,fecha")
+    .in("numero", numeros);
+  const invMap = new Map((invs ?? []).map((i) => [i.numero, i]));
+  const rows: PurchaseHistoryRow[] = (lines ?? []).map((l) => ({
+    numero: l.invoice_numero as string,
+    referencia_proveedor: invMap.get(l.invoice_numero as string)?.referencia_proveedor ?? null,
+    partner: invMap.get(l.invoice_numero as string)?.partner ?? null,
+    fecha: invMap.get(l.invoice_numero as string)?.fecha ?? null,
+    cantidad: l.cantidad, precio_unitario: l.precio_unitario, subtotal: l.subtotal,
+  })).sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
+  return { ok: true, rows };
+}
+
 export type ErpLoteDetail = {
   lote: { id: number; lote: string; product_code: string | null; product_name: string | null; cantidad: number | null; cantidad_real: number | null; ubicacion: string | null; creado_el: string | null } | null;
   orders: { referencia: string; product_code: string | null; product_name: string | null; cantidad: number | null; estado: string | null; fecha_inicio: string | null; fecha_final: string | null; bom: string | null }[];

@@ -1,10 +1,10 @@
 "use client";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { euro } from "@/lib/types";
 import { fdate } from "./types";
 import {
-  adminErpSearch, adminErpLoteDetail, adminErpLoteCandidates,
-  type ErpSearchResult, type ErpLoteDetail,
+  adminErpSearch, adminErpLoteDetail, adminErpLoteCandidates, adminErpProductPurchaseHistory,
+  type ErpSearchResult, type ErpLoteDetail, type PurchaseHistoryRow,
 } from "@/app/admin/actions";
 
 type Candidate = { product_code: string | null; product_name: string | null };
@@ -22,6 +22,19 @@ export default function Trazabilidad() {
   const [detailError, setDetailError] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
   const [pendingLote, setPendingLote] = useState<string | null>(null);
+
+  const [openPurchaseFor, setOpenPurchaseFor] = useState<string | null>(null);
+  const [purchaseRows, setPurchaseRows] = useState<PurchaseHistoryRow[] | null>(null);
+  const [purchaseLoading, setPurchaseLoading] = useState(false);
+
+  async function togglePurchaseHistory(componentCode: string | null) {
+    if (!componentCode) return;
+    if (openPurchaseFor === componentCode) { setOpenPurchaseFor(null); setPurchaseRows(null); return; }
+    setOpenPurchaseFor(componentCode); setPurchaseLoading(true); setPurchaseRows(null);
+    const res = await adminErpProductPurchaseHistory(componentCode);
+    setPurchaseLoading(false);
+    if (res.ok) setPurchaseRows(res.rows ?? []);
+  }
 
   async function doSearch(e?: React.FormEvent) {
     e?.preventDefault();
@@ -267,18 +280,57 @@ export default function Trazabilidad() {
               {detail.rawMaterials.length ? (
                 <>
                   <p className="lead" style={{ fontSize: 12 }}>
-                    Extraído directamente de los movimientos de fabricación (no de la lista de materiales genérica): cada línea es el lote real de materia prima/envase consumido en esta orden.
+                    Extraído directamente de los movimientos de fabricación (no de la lista de materiales genérica): cada línea es el lote real de materia prima/envase consumido en esta orden. Haz clic en una materia prima para ver su historial de compra.
                   </p>
                   <table className="adm-table">
                     <thead><tr><th>Orden</th><th>Materia prima / componente</th><th>Lote</th><th>Cantidad</th></tr></thead>
                     <tbody>
                       {detail.rawMaterials.map((r, idx) => (
-                        <tr key={idx}>
-                          <td><code>{r.order_referencia}</code></td>
-                          <td>{r.component_name || r.component_code || "—"}</td>
-                          <td>{r.component_lote ? <code>{r.component_lote}</code> : <span style={{ color: "var(--muted)" }}>sin lote registrado</span>}</td>
-                          <td>{r.cantidad ?? "—"}</td>
-                        </tr>
+                        <Fragment key={idx}>
+                          <tr>
+                            <td><code>{r.order_referencia}</code></td>
+                            <td>
+                              {r.component_code ? (
+                                <button
+                                  className="no-print"
+                                  onClick={() => togglePurchaseHistory(r.component_code)}
+                                  style={{ background: "none", border: "none", padding: 0, color: "var(--ink)", textDecoration: "underline", cursor: "pointer", font: "inherit", textAlign: "left" }}
+                                >
+                                  {r.component_name || r.component_code}
+                                </button>
+                              ) : (r.component_name || "—")}
+                              <span className="print-only" style={{ display: "none" }}>{r.component_name || r.component_code}</span>
+                            </td>
+                            <td>{r.component_lote ? <code>{r.component_lote}</code> : <span style={{ color: "var(--muted)" }}>sin lote registrado</span>}</td>
+                            <td>{r.cantidad ?? "—"}</td>
+                          </tr>
+                          {openPurchaseFor === r.component_code && (
+                            <tr className="no-print">
+                              <td colSpan={4} style={{ background: "var(--cream)" }}>
+                                {purchaseLoading && <p style={{ margin: "8px 0" }}>Cargando historial de compra…</p>}
+                                {purchaseRows && (
+                                  purchaseRows.length ? (
+                                    <table className="adm-table" style={{ margin: "8px 0" }}>
+                                      <thead><tr><th>Factura (interna)</th><th>Referencia proveedor</th><th>Proveedor</th><th>Fecha</th><th>Cantidad</th><th>Precio ud.</th></tr></thead>
+                                      <tbody>
+                                        {purchaseRows.map((p, i) => (
+                                          <tr key={i}>
+                                            <td><code>{p.numero}</code></td>
+                                            <td>{p.referencia_proveedor ? <code>{p.referencia_proveedor}</code> : "—"}</td>
+                                            <td>{p.partner || "—"}</td>
+                                            <td>{p.fecha ? fdate(p.fecha) : "—"}</td>
+                                            <td>{p.cantidad ?? "—"}</td>
+                                            <td>{p.precio_unitario != null ? euro(p.precio_unitario) : "—"}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  ) : <p style={{ margin: "8px 0" }}>No hay facturas de compra registradas para este producto.</p>
+                                )}
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
                       ))}
                     </tbody>
                   </table>
