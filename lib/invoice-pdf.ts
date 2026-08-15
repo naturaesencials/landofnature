@@ -92,7 +92,7 @@ export async function generateInvoicePdf(data: InvoicePdfData): Promise<Buffer> 
     doc.fillColor(OLIVE_MED).fontSize(8).font("Helvetica-Bold").text("EMISOR", 50, y);
     doc.fillColor(TEXT).fontSize(10).font("Helvetica-Bold").text("Land of Nature, S.L.", 50, y + 12);
     doc.fillColor(TEXT).fontSize(9).font("Helvetica").text(
-      "CIF ESB05422639\nSan Pedro de Alcántara, Marbella\ncarlos@landofnature.com",
+      "CIF ESB05422639\nCalle Letonia, Nave 16, P.I. San Pedro de Alcántara\n29670 Marbella (Málaga), España\ninfo@landofnature.com",
       50, y + 26, { width: colWidth, lineGap: 2 }
     );
 

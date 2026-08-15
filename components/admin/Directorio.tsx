@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { euro } from "@/lib/types";
 import { fdate } from "./types";
 import {
-  adminPartnersList, adminUpdatePartner, adminPartnerInvoices,
+  adminPartnersList, adminUpdatePartner, adminPartnerInvoices, adminPartnersCounts,
   type Partner, type PartnerInvoiceRow,
 } from "@/app/admin/actions";
 
@@ -15,6 +15,7 @@ export default function Directorio() {
   const [rows, setRows] = useState<Partner[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState<Partner | null>(null);
+  const [counts, setCounts] = useState<{ cliente: number; proveedor: number } | null>(null);
 
   async function load() {
     setLoading(true);
@@ -24,12 +25,13 @@ export default function Directorio() {
   }
 
   useEffect(() => { load(); }, [kind]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { adminPartnersCounts().then((r) => { if (r.ok) setCounts({ cliente: r.cliente!, proveedor: r.proveedor! }); }); }, []);
 
   return (
     <div>
       <div className="adm-tabs" style={{ marginBottom: 16 }}>
-        <button className={kind === "cliente" ? "on" : ""} onClick={() => setKind("cliente")}>Clientes</button>
-        <button className={kind === "proveedor" ? "on" : ""} onClick={() => setKind("proveedor")}>Proveedores</button>
+        <button className={kind === "cliente" ? "on" : ""} onClick={() => setKind("cliente")}>Clientes {counts && <span>{counts.cliente}</span>}</button>
+        <button className={kind === "proveedor" ? "on" : ""} onClick={() => setKind("proveedor")}>Proveedores {counts && <span>{counts.proveedor}</span>}</button>
       </div>
 
       <form onSubmit={(e) => { e.preventDefault(); load(); }} style={{ display: "flex", gap: 8, marginBottom: 16 }}>

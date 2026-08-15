@@ -445,6 +445,16 @@ export type Partner = {
   profile_id: string | null;
 };
 
+export async function adminPartnersCounts(): Promise<Res & { cliente?: number; proveedor?: number }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const [c, p] = await Promise.all([
+    supabase.from("partners").select("id", { count: "exact", head: true }).in("kind", ["cliente", "ambos"]),
+    supabase.from("partners").select("id", { count: "exact", head: true }).in("kind", ["proveedor", "ambos"]),
+  ]);
+  return { ok: true, cliente: c.count ?? 0, proveedor: p.count ?? 0 };
+}
+
 export async function adminPartnersList(input: { kind?: "cliente" | "proveedor"; q?: string }): Promise<Res & { rows?: Partner[] }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
