@@ -10,6 +10,7 @@ import Facturas from "./admin/Facturas";
 import Clientes from "./admin/Clientes";
 import Inventario from "./admin/Inventario";
 import Trazabilidad from "./admin/Trazabilidad";
+import Directorio from "./admin/Directorio";
 import { adminUpdateProductFull, adminUpdateOrderStatus, adminUpdateRequest, adminShipOrder } from "@/app/admin/actions";
 
 type Props = {
@@ -20,7 +21,7 @@ type Props = {
   warehouses: Warehouse[]; inventoryLevels: InventoryLevel[];
 };
 
-type Tab = "resumen" | "productos" | "tarifas" | "pedidos" | "facturas" | "clientes" | "solicitudes" | "inventario" | "trazabilidad";
+type Tab = "resumen" | "productos" | "tarifas" | "pedidos" | "facturas" | "clientes" | "solicitudes" | "inventario" | "trazabilidad" | "directorio";
 
 export default function AdminPanel(p: Props) {
   const pendingReq = p.requests.filter((r) => r.status === "pending").length;
@@ -38,6 +39,7 @@ export default function AdminPanel(p: Props) {
         <button className={tab === "pedidos" ? "on" : ""} onClick={() => setTab("pedidos")}>Pedidos <span>{p.orders.length}</span></button>
         <button className={tab === "facturas" ? "on" : ""} onClick={() => setTab("facturas")}>Facturas {openInvoices > 0 ? <span>{openInvoices}</span> : null}</button>
         <button className={tab === "clientes" ? "on" : ""} onClick={() => setTab("clientes")}>Clientes <span>{p.clients.length}</span></button>
+        <button className={tab === "directorio" ? "on" : ""} onClick={() => setTab("directorio")}>Directorio</button>
         <button className={tab === "solicitudes" ? "on" : ""} onClick={() => setTab("solicitudes")}>Solicitudes {pendingReq > 0 && <span className="alert">{pendingReq}</span>}</button>
       </div>
 
@@ -61,6 +63,7 @@ export default function AdminPanel(p: Props) {
         />
       )}
       {tab === "solicitudes" && <Solicitudes requests={p.requests} />}
+      {tab === "directorio" && <Directorio />}
     </div>
   );
 }

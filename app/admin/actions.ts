@@ -436,6 +436,53 @@ export async function adminInventoryHistory(input: { from?: string; to?: string;
   return { ok: true, rows: (data ?? []) as InvHistoryRow[] };
 }
 
+/* ---------------- Directorio de clientes y proveedores ---------------- */
+
+export type Partner = {
+  id: string; kind: "cliente" | "proveedor" | "ambos"; name: string; cif: string | null;
+  email: string | null; phone: string | null; address: string | null; city: string | null;
+  postal_code: string | null; province: string | null; country: string | null; notes: string | null;
+  profile_id: string | null;
+};
+
+export async function adminPartnersList(input: { kind?: "cliente" | "proveedor"; q?: string }): Promise<Res & { rows?: Partner[] }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  let query = supabase.from("partners").select("*").order("name");
+  if (input.kind) query = query.in("kind", [input.kind, "ambos"]);
+  if (input.q && input.q.trim().length >= 2) query = query.or(`name.ilike.%${input.q}%,cif.ilike.%${input.q}%,email.ilike.%${input.q}%`);
+  const { data, error } = await query.limit(500);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, rows: (data ?? []) as Partner[] };
+}
+
+export async function adminUpdatePartner(input: {
+  id: string; cif: string | null; email: string | null; phone: string | null; address: string | null;
+  city: string | null; postal_code: string | null; province: string | null; notes: string | null;
+}): Promise<Res> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const { error } = await supabase.from("partners").update({
+    cif: input.cif, email: input.email, phone: input.phone, address: input.address,
+    city: input.city, postal_code: input.postal_code, province: input.province, notes: input.notes,
+    updated_at: new Date().toISOString(),
+  }).eq("id", input.id);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export type PartnerInvoiceRow = { numero: string; fecha: string | null; total: number | null; estado: string | null };
+
+/** Facturas (venta o compra) vinculadas a un partner por coincidencia de nombre en el histórico ERP. */
+export async function adminPartnerInvoices(name: string, kind: "cliente" | "proveedor"): Promise<Res & { rows?: PartnerInvoiceRow[] }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const table = kind === "cliente" ? "erp_invoices_sale" : "erp_invoices_purchase";
+  const { data, error } = await supabase.from(table).select("numero,fecha,total,estado").eq("partner", name).order("fecha", { ascending: false }).limit(300);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, rows: (data ?? []) as PartnerInvoiceRow[] };
+}
+
 /* ---------------- Histórico ERP (Odoo) / Trazabilidad ---------------- */
 
 export type ErpSearchResult = {
