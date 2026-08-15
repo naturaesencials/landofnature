@@ -261,28 +261,50 @@ export default function Trazabilidad() {
             </section>
 
             <section style={{ marginBottom: 20 }}>
-              <h4>Facturas de venta relacionadas {detail.relatedSales.length ? `(${detail.relatedSales.length})` : ""}</h4>
-              {detail.relatedSales.length ? (
+              <h4>Facturas de venta {detail.exactSales.length ? `(${detail.exactSales.length})` : ""}</h4>
+              {detail.exactSales.length ? (
                 <>
                   <p className="lead" style={{ fontSize: 12 }}>
-                    El ERP no exportó el número de lote a nivel de línea de factura, por lo que esta relación se hace por producto (mismo código), no por lote exacto.
+                    Vinculadas de forma exacta: lote → albarán de salida → pedido de venta → factura.
                   </p>
                   <table className="adm-table">
-                    <thead><tr><th>Factura</th><th>Cliente</th><th>Fecha</th><th>Cantidad</th></tr></thead>
+                    <thead><tr><th>Factura</th><th>Cliente</th><th>Fecha</th><th>Albarán</th></tr></thead>
                     <tbody>
-                      {detail.relatedSales.map((s, idx) => (
+                      {detail.exactSales.map((s, idx) => (
                         <tr key={idx}>
                           <td><code>{s.numero}</code></td>
                           <td>{s.partner || "—"}</td>
                           <td>{s.fecha ? fdate(s.fecha) : "—"}</td>
-                          <td>{s.cantidad ?? "—"}</td>
+                          <td><code>{s.delivery_referencia || "—"}</code></td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </>
-              ) : <p className="lead">No se encontraron facturas de venta de este producto.</p>}
+              ) : <p className="lead">No se encontró ningún albarán de salida de este lote con pedido de venta vinculado a una factura.</p>}
             </section>
+
+            {detail.relatedSales.length > 0 && (
+              <section style={{ marginBottom: 20 }}>
+                <h4>Otras facturas del mismo producto ({detail.relatedSales.length})</h4>
+                <p className="lead" style={{ fontSize: 12 }}>
+                  Estas NO están confirmadas para este lote exacto — se listan solo por coincidir en el producto, por si el lote no tiene albarán/origen registrado en el ERP.
+                </p>
+                <table className="adm-table">
+                  <thead><tr><th>Factura</th><th>Cliente</th><th>Fecha</th><th>Cantidad</th></tr></thead>
+                  <tbody>
+                    {detail.relatedSales.map((s, idx) => (
+                      <tr key={idx}>
+                        <td><code>{s.numero}</code></td>
+                        <td>{s.partner || "—"}</td>
+                        <td>{s.fecha ? fdate(s.fecha) : "—"}</td>
+                        <td>{s.cantidad ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            )}
           </div>
         </div>
       )}

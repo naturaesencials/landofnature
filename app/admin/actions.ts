@@ -483,10 +483,13 @@ export type ErpLoteDetail = {
   orders: { referencia: string; product_code: string | null; product_name: string | null; cantidad: number | null; estado: string | null; fecha_inicio: string | null; fecha_final: string | null; bom: string | null }[];
   components: { order_referencia: string | null; component_code: string | null; component_name: string | null; cantidad_consumida: number | null }[];
   moves: { id: number; referencia: string | null; desde: string | null; hasta: string | null; fecha: string | null; cantidad_hecha: number | null; estado: string | null }[];
+  exactSales: { numero: string; fecha: string | null; partner: string | null; cantidad: number | null; product_code: string | null; product_name: string | null; delivery_referencia: string }[];
   relatedSales: { numero: string; fecha: string | null; partner: string | null; cantidad: number | null; product_code: string | null; product_name: string | null }[];
 };
 
-/** Devuelve la cadena completa de trazabilidad para un lote: orden de fabricación, componentes consumidos, movimientos de stock y facturas de venta relacionadas por producto. */
+/** Devuelve la cadena completa de trazabilidad para un lote: orden de fabricación, componentes consumidos, movimientos de stock
+ *  y facturas de venta. Primero intenta la cadena exacta (lote -> albarán -> pedido de venta -> factura); si no hay match exacto,
+ *  cae a una relación aproximada por producto (misma referencia) marcada explícitamente como tal. */
 export async function adminErpLoteDetail(lote: string): Promise<Res & { detail?: ErpLoteDetail }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
@@ -503,6 +506,33 @@ export async function adminErpLoteDetail(lote: string): Promise<Res & { detail?:
       .in("order_referencia", orderRefs);
     components = (data ?? []) as ErpLoteDetail["components"];
   }
+
+  // ---- Cadena EXACTA: lote -> albarán de salida -> documento origen (pedido venta) -> factura ----
+  const outboundMoves = (movesRes.data ?? []).filter((m) => (m.hasta || "").toLowerCase().includes("customer") && m.referencia);
+  const deliveryRefs = Array.from(new Set(outboundMoves.map((m) => m.referencia as string)));
+  let exactSales: ErpLoteDetail["exactSales"] = [];
+  const matchedInvoiceNumeros = new Set<string>();
+  if (deliveryRefs.length) {
+    const { data: deliveries } = await supabase.from("erp_deliveries").select("referencia,documento_origen").in("referencia", deliveryRefs);
+    const origenes = Array.from(new Set((deliveries ?? []).map((d) => d.documento_origen).filter(Boolean))) as string[];
+    if (origenes.length) {
+      const { data: invs } = await supabase.from("erp_invoices_sale").select("numero,fecha,partner,origen").in("origen", origenes);
+      const productCode = lotRes.data?.product_code || (ordersRes.data ?? [])[0]?.product_code || null;
+      const refToOrigen = new Map((deliveries ?? []).map((d) => [d.referencia, d.documento_origen]));
+      for (const inv of invs ?? []) {
+        const deliveryRef = deliveryRefs.find((r) => refToOrigen.get(r) === inv.origen);
+        exactSales.push({
+          numero: inv.numero, fecha: inv.fecha, partner: inv.partner,
+          cantidad: null, product_code: productCode, product_name: lotRes.data?.product_name ?? null,
+          delivery_referencia: deliveryRef || "",
+        });
+        matchedInvoiceNumeros.add(inv.numero);
+      }
+      exactSales.sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
+    }
+  }
+
+  // ---- Fallback aproximado por producto, excluyendo las ya vinculadas de forma exacta ----
   const productCode = lotRes.data?.product_code || (ordersRes.data ?? [])[0]?.product_code || null;
   let relatedSales: ErpLoteDetail["relatedSales"] = [];
   if (productCode) {
@@ -510,20 +540,23 @@ export async function adminErpLoteDetail(lote: string): Promise<Res & { detail?:
       .select("invoice_numero,cantidad,product_code,product_name")
       .eq("product_code", productCode)
       .limit(100);
-    const numeros = Array.from(new Set((data ?? []).map((l) => l.invoice_numero).filter(Boolean))) as string[];
+    const numeros = Array.from(new Set((data ?? []).map((l) => l.invoice_numero).filter((n) => n && !matchedInvoiceNumeros.has(n)))) as string[];
     if (numeros.length) {
       const { data: invs } = await supabase.from("erp_invoices_sale").select("numero,fecha,partner").in("numero", numeros);
       const invMap = new Map((invs ?? []).map((i) => [i.numero, i]));
-      relatedSales = (data ?? []).map((l) => ({
-        numero: l.invoice_numero as string,
-        fecha: invMap.get(l.invoice_numero as string)?.fecha ?? null,
-        partner: invMap.get(l.invoice_numero as string)?.partner ?? null,
-        cantidad: l.cantidad,
-        product_code: l.product_code,
-        product_name: l.product_name,
-      })).sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
+      relatedSales = (data ?? [])
+        .filter((l) => l.invoice_numero && !matchedInvoiceNumeros.has(l.invoice_numero))
+        .map((l) => ({
+          numero: l.invoice_numero as string,
+          fecha: invMap.get(l.invoice_numero as string)?.fecha ?? null,
+          partner: invMap.get(l.invoice_numero as string)?.partner ?? null,
+          cantidad: l.cantidad,
+          product_code: l.product_code,
+          product_name: l.product_name,
+        })).sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
     }
   }
+
   return {
     ok: true,
     detail: {
@@ -531,6 +564,7 @@ export async function adminErpLoteDetail(lote: string): Promise<Res & { detail?:
       orders: (ordersRes.data ?? []) as ErpLoteDetail["orders"],
       components,
       moves: (movesRes.data ?? []) as ErpLoteDetail["moves"],
+      exactSales,
       relatedSales,
     },
   };
