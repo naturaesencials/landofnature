@@ -32,11 +32,11 @@ export type InvoicePdfData = {
 };
 
 const OLIVE = "#55632F";
+const OLIVE_MED = "#6B7A3E";
 const SAGE = "#8E9C6A";
 const LIGHT_SAGE = "#C2CCA2";
 const CREAM = "#EEF0E4";
-const BODY = "#2C2C2A";
-const MUTED = "#5b6350";
+const TEXT = "#414A34"; // Gris oliva — texto, según guía de marca
 
 const euro = (n: number) => `${n.toFixed(2).replace(".", ",")} \u20ac`;
 const fdate = (iso: string) =>
@@ -50,34 +50,38 @@ export async function generateInvoicePdf(data: InvoicePdfData): Promise<Buffer> 
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
-    const logoPath = path.join(process.cwd(), "public", "logo-full.png");
+    const logoPath = path.join(process.cwd(), "public", "logo-vertical.png");
     const pageWidth = doc.page.width - 100;
 
     // ---- Cabecera ----
-    let headerBottom = 50;
+    // Logo vertical (icono + wordmark + tagline en una sola imagen) a la izquierda;
+    // bloque de tipo de documento/número/fecha a la derecha, alineado con la altura del logo.
+    let headerBottom = 100;
     if (fs.existsSync(logoPath)) {
-      doc.image(logoPath, 50, 45, { height: 34 });
-      headerBottom = 45 + 34;
+      const logoHeight = 62;
+      doc.image(logoPath, 50, 40, { height: logoHeight });
+      headerBottom = 40 + logoHeight;
     } else {
       doc.fillColor(OLIVE).fontSize(18).font("Helvetica-Bold").text("Land of Nature", 50, 50);
-      headerBottom = 50 + 22;
+      doc.fillColor(TEXT).fontSize(9).font("Helvetica").text("Transformando Positivamente", 50, 74);
+      headerBottom = 90;
     }
-    doc.fillColor(MUTED).fontSize(9).font("Helvetica").text("Transformando Positivamente", 50, headerBottom + 2);
 
     const title = data.kind === "credit_note" ? "Factura rectificativa" : "Factura";
     doc.fillColor(SAGE).fontSize(9).font("Helvetica").text(title.toUpperCase(), 0, 50, { align: "right", width: pageWidth + 50 });
-    doc.fillColor(BODY).fontSize(13).font("Helvetica-Bold").text(data.numero, 0, 63, { align: "right", width: pageWidth + 50 });
-    doc.fillColor(MUTED).fontSize(9).font("Helvetica").text(`Fecha: ${fdate(data.issue_date)}`, 0, 80, { align: "right", width: pageWidth + 50 });
+    doc.fillColor(TEXT).fontSize(13).font("Helvetica-Bold").text(data.numero, 0, 63, { align: "right", width: pageWidth + 50 });
+    doc.fillColor(TEXT).fontSize(9).font("Helvetica").text(`Fecha: ${fdate(data.issue_date)}`, 0, 80, { align: "right", width: pageWidth + 50 });
 
-    doc.moveTo(50, 105).lineTo(50 + pageWidth, 105).lineWidth(1.5).strokeColor(OLIVE).stroke();
+    const dividerY = Math.max(headerBottom + 10, 105);
+    doc.moveTo(50, dividerY).lineTo(50 + pageWidth, dividerY).lineWidth(1.5).strokeColor(OLIVE).stroke();
 
     // ---- Rectificativa: aviso ----
-    let y = 118;
+    let y = dividerY + 13;
     if (data.kind === "credit_note" && data.rectifies_numero) {
-      doc.fillColor(BODY).fontSize(9).font("Helvetica-Bold").text(`Rectifica a la factura ${data.rectifies_numero}`, 50, y);
+      doc.fillColor(TEXT).fontSize(9).font("Helvetica-Bold").text(`Rectifica a la factura ${data.rectifies_numero}`, 50, y);
       y += 12;
       if (data.rectification_reason) {
-        doc.font("Helvetica").fillColor(MUTED).text(`Motivo: ${data.rectification_reason}`, 50, y, { width: pageWidth });
+        doc.font("Helvetica").fillColor(TEXT).text(`Motivo: ${data.rectification_reason}`, 50, y, { width: pageWidth });
         y += 14;
       }
       y += 6;
@@ -85,22 +89,22 @@ export async function generateInvoicePdf(data: InvoicePdfData): Promise<Buffer> 
 
     // ---- Emisor / Cliente ----
     const colWidth = pageWidth / 2 - 10;
-    doc.fillColor(SAGE).fontSize(8).font("Helvetica-Bold").text("EMISOR", 50, y);
-    doc.fillColor(BODY).fontSize(10).font("Helvetica-Bold").text("Land of Nature, S.L.", 50, y + 12);
-    doc.fillColor(MUTED).fontSize(9).font("Helvetica").text(
+    doc.fillColor(OLIVE_MED).fontSize(8).font("Helvetica-Bold").text("EMISOR", 50, y);
+    doc.fillColor(TEXT).fontSize(10).font("Helvetica-Bold").text("Land of Nature, S.L.", 50, y + 12);
+    doc.fillColor(TEXT).fontSize(9).font("Helvetica").text(
       "CIF ESB05422639\nSan Pedro de Alcántara, Marbella\ncarlos@landofnature.com",
       50, y + 26, { width: colWidth, lineGap: 2 }
     );
 
     const col2X = 50 + colWidth + 20;
-    doc.fillColor(SAGE).fontSize(8).font("Helvetica-Bold").text("CLIENTE", col2X, y);
-    doc.fillColor(BODY).fontSize(10).font("Helvetica-Bold").text(data.customer_name, col2X, y + 12, { width: colWidth });
+    doc.fillColor(OLIVE_MED).fontSize(8).font("Helvetica-Bold").text("CLIENTE", col2X, y);
+    doc.fillColor(TEXT).fontSize(10).font("Helvetica-Bold").text(data.customer_name, col2X, y + 12, { width: colWidth });
     const clienteLines = [
       data.customer_cif ? `NIF/CIF: ${data.customer_cif}` : null,
       [data.customer_address, data.customer_postal_code, data.customer_city, data.customer_province].filter(Boolean).join(", ") || null,
       data.customer_email,
     ].filter(Boolean).join("\n");
-    doc.fillColor(MUTED).fontSize(9).font("Helvetica").text(clienteLines, col2X, y + 26, { width: colWidth, lineGap: 2 });
+    doc.fillColor(TEXT).fontSize(9).font("Helvetica").text(clienteLines, col2X, y + 26, { width: colWidth, lineGap: 2 });
 
     y += 90;
 
@@ -108,7 +112,7 @@ export async function generateInvoicePdf(data: InvoicePdfData): Promise<Buffer> 
     const cols = { desc: 50, qty: 300, price: 350, vat: 420, amount: 460 };
     doc.moveTo(50, y).lineTo(50 + pageWidth, y).lineWidth(0.5).strokeColor(LIGHT_SAGE).stroke();
     y += 6;
-    doc.fillColor(MUTED).fontSize(8).font("Helvetica-Bold");
+    doc.fillColor(OLIVE_MED).fontSize(8).font("Helvetica-Bold");
     doc.text("PRODUCTO", cols.desc, y);
     doc.text("CANT.", cols.qty, y, { width: 40, align: "right" });
     doc.text("PRECIO", cols.price, y, { width: 60, align: "right" });
@@ -118,7 +122,7 @@ export async function generateInvoicePdf(data: InvoicePdfData): Promise<Buffer> 
     doc.moveTo(50, y).lineTo(50 + pageWidth, y).lineWidth(0.5).strokeColor(LIGHT_SAGE).stroke();
     y += 6;
 
-    doc.font("Helvetica").fontSize(9).fillColor(BODY);
+    doc.font("Helvetica").fontSize(9).fillColor(TEXT);
     for (const line of data.lines) {
       const rowHeight = Math.max(14, doc.heightOfString(line.description, { width: 240 }));
       doc.text(line.description, cols.desc, y, { width: 240 });
@@ -134,7 +138,7 @@ export async function generateInvoicePdf(data: InvoicePdfData): Promise<Buffer> 
     doc.moveTo(50 + pageWidth - 200, y).lineTo(50 + pageWidth, y).lineWidth(0.5).strokeColor(LIGHT_SAGE).stroke();
     y += 8;
     const totalsX = 50 + pageWidth - 200;
-    doc.fontSize(9).fillColor(MUTED).font("Helvetica");
+    doc.fontSize(9).fillColor(TEXT).font("Helvetica");
     doc.text("Base imponible", totalsX, y, { width: 120 });
     doc.text(euro(data.subtotal), totalsX + 120, y, { width: 80, align: "right" });
     y += 14;
@@ -143,7 +147,7 @@ export async function generateInvoicePdf(data: InvoicePdfData): Promise<Buffer> 
     y += 16;
     doc.moveTo(totalsX, y).lineTo(totalsX + 200, y).lineWidth(1).strokeColor(OLIVE).stroke();
     y += 6;
-    doc.fillColor(BODY).fontSize(12).font("Helvetica-Bold").text("Total", totalsX, y, { width: 120 });
+    doc.fillColor(TEXT).fontSize(12).font("Helvetica-Bold").text("Total", totalsX, y, { width: 120 });
     doc.text(euro(data.total), totalsX + 120, y, { width: 80, align: "right" });
 
     // ---- Pie ----
