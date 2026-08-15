@@ -286,6 +286,30 @@ export default function Trazabilidad() {
               ) : <p className="lead">No se encontró consumo de materias primas con lote para este lote de fabricación.</p>}
             </section>
 
+            {detail.rawMaterialSales.length > 0 && (
+              <section style={{ marginBottom: 20 }}>
+                <h4>Facturas de venta de los lotes de materia prima ({detail.rawMaterialSales.length})</h4>
+                <p className="lead" style={{ fontSize: 12 }}>
+                  Casos en los que el propio lote de materia prima/granel también se vendió directamente (no como parte de este producto terminado), vinculado por la misma cadena exacta lote → albarán → pedido → factura.
+                </p>
+                <table className="adm-table">
+                  <thead><tr><th>Materia prima</th><th>Lote</th><th>Factura</th><th>Cliente</th><th>Fecha</th><th>Albarán</th></tr></thead>
+                  <tbody>
+                    {detail.rawMaterialSales.map((s, idx) => (
+                      <tr key={idx}>
+                        <td>{s.component_name || s.component_code || "—"}</td>
+                        <td><code>{s.component_lote}</code></td>
+                        <td><code>{s.numero}</code></td>
+                        <td>{s.partner || "—"}</td>
+                        <td>{s.fecha ? fdate(s.fecha) : "—"}</td>
+                        <td><code>{s.delivery_referencia}</code></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            )}
+
             {detail.components.length > 0 && (
               <section style={{ marginBottom: 20 }}>
                 <h4>Lista de materiales (BOM) de referencia ({detail.components.length})</h4>

@@ -510,6 +510,7 @@ export type ErpLoteDetail = {
   lote: { id: number; lote: string; product_code: string | null; product_name: string | null; cantidad: number | null; cantidad_real: number | null; ubicacion: string | null; creado_el: string | null } | null;
   orders: { referencia: string; product_code: string | null; product_name: string | null; cantidad: number | null; estado: string | null; fecha_inicio: string | null; fecha_final: string | null; bom: string | null }[];
   rawMaterials: { order_referencia: string; component_code: string | null; component_name: string | null; component_lote: string | null; cantidad: number | null }[];
+  rawMaterialSales: { component_code: string | null; component_name: string | null; component_lote: string; numero: string; fecha: string | null; partner: string | null; delivery_referencia: string }[];
   components: { order_referencia: string | null; component_code: string | null; component_name: string | null; cantidad_consumida: number | null }[];
   moves: { id: number; referencia: string | null; desde: string | null; hasta: string | null; fecha: string | null; cantidad_hecha: number | null; estado: string | null }[];
   exactSales: { numero: string; fecha: string | null; partner: string | null; cantidad: number | null; product_code: string | null; product_name: string | null; delivery_referencia: string }[];
@@ -584,6 +585,55 @@ export async function adminErpLoteDetail(loteInput: string, productCode?: string
     }));
   }
 
+  // ---- Facturas de venta de los propios lotes de materia prima (por si esa materia prima/granel
+  // también se vendió tal cual, además de consumirse en fabricación) — misma cadena exacta que arriba. ----
+  let rawMaterialSales: ErpLoteDetail["rawMaterialSales"] = [];
+  const rmPairs = Array.from(new Map(
+    rawMaterials.filter((r) => r.component_lote && r.component_code)
+      .map((r) => [`${r.component_lote}|${r.component_code}`, r])
+  ).values());
+  if (rmPairs.length) {
+    const rmLotes = Array.from(new Set(rmPairs.map((r) => r.component_lote as string)));
+    const { data: rmMoves } = await supabase.from("erp_stock_moves")
+      .select("referencia,lote,product_code")
+      .in("lote", rmLotes)
+      .ilike("hasta", "%Customer%");
+    const rmOutbound = (rmMoves ?? []).filter((m) =>
+      rmPairs.some((p) => p.component_lote === m.lote && p.component_code === m.product_code)
+    );
+    const rmDeliveryRefs = Array.from(new Set(rmOutbound.map((m) => m.referencia).filter(Boolean))) as string[];
+    if (rmDeliveryRefs.length) {
+      const { data: rmDeliveries } = await supabase.from("erp_deliveries").select("referencia,documento_origen").in("referencia", rmDeliveryRefs);
+      const rmOrigenes = Array.from(new Set((rmDeliveries ?? []).map((d) => d.documento_origen).filter(Boolean))) as string[];
+      if (rmOrigenes.length) {
+        const { data: rmInvs } = await supabase.from("erp_invoices_sale").select("numero,fecha,partner,origen").in("origen", rmOrigenes);
+        const refToOrigen = new Map((rmDeliveries ?? []).map((d) => [d.referencia, d.documento_origen]));
+        const origenToDeliveryRefs = new Map<string, string[]>();
+        for (const d of rmDeliveries ?? []) {
+          if (!d.documento_origen) continue;
+          const arr = origenToDeliveryRefs.get(d.documento_origen) ?? [];
+          arr.push(d.referencia);
+          origenToDeliveryRefs.set(d.documento_origen, arr);
+        }
+        for (const inv of rmInvs ?? []) {
+          const candidateRefs = origenToDeliveryRefs.get(inv.origen as string) ?? [];
+          for (const ref of candidateRefs) {
+            const moves = rmOutbound.filter((m) => m.referencia === ref);
+            for (const mv of moves) {
+              const pair = rmPairs.find((p) => p.component_lote === mv.lote && p.component_code === mv.product_code);
+              if (!pair) continue;
+              rawMaterialSales.push({
+                component_code: pair.component_code, component_name: pair.component_name,
+                component_lote: mv.lote as string, numero: inv.numero, fecha: inv.fecha, partner: inv.partner,
+                delivery_referencia: ref,
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
   // ---- Cadena EXACTA de venta: lote+producto -> albarán de salida -> documento origen -> factura ----
   const outboundMoves = movesData.filter((m) => (m.hasta || "").toLowerCase().includes("customer") && m.referencia);
   const deliveryRefs = Array.from(new Set(outboundMoves.map((m) => m.referencia as string)));
@@ -642,6 +692,7 @@ export async function adminErpLoteDetail(loteInput: string, productCode?: string
       lote: (lotRes.data ?? null) as ErpLoteDetail["lote"],
       orders: (ordersRes.data ?? []) as ErpLoteDetail["orders"],
       rawMaterials,
+      rawMaterialSales,
       components,
       moves: movesData,
       exactSales,
