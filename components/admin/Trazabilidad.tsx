@@ -13,9 +13,11 @@ export default function Trazabilidad() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ErpSearchResult | null>(null);
 
+  const [loteInput, setLoteInput] = useState("");
   const [lote, setLote] = useState<string | null>(null);
   const [detail, setDetail] = useState<ErpLoteDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
 
   async function doSearch(e?: React.FormEvent) {
     e?.preventDefault();
@@ -28,32 +30,57 @@ export default function Trazabilidad() {
   }
 
   async function openLote(l: string) {
-    setLote(l); setDetailLoading(true); setDetail(null);
-    const res = await adminErpLoteDetail(l);
+    const clean = l.trim();
+    if (!clean) return;
+    setLote(clean); setDetailLoading(true); setDetail(null); setDetailError(null);
+    const res = await adminErpLoteDetail(clean);
     setDetailLoading(false);
-    if (res.ok) setDetail(res.detail ?? null);
+    if (!res.ok) { setDetailError(res.error || "No se pudo generar el informe."); return; }
+    if (!res.detail?.lote && !res.detail?.orders.length && !res.detail?.moves.length) {
+      setDetailError(`No se encontró ningún dato de trazabilidad para el lote "${clean}".`);
+      return;
+    }
+    setDetail(res.detail ?? null);
   }
 
   return (
     <div>
-      <p className="lead" style={{ marginTop: 0 }}>
-        Histórico importado del ERP (Odoo): fabricación, lotes, movimientos de stock y facturación.
-        Busca por lote, código o nombre de producto, número de factura o referencia de orden.
-      </p>
+      {/* ---- Generador directo de informe por número de lote ---- */}
+      <div className="no-print" style={{ background: "var(--cream)", border: "1px solid var(--line)", borderRadius: 6, padding: 16, marginBottom: 24 }}>
+        <h3 style={{ marginTop: 0 }}>Generar informe de trazabilidad</h3>
+        <p className="lead" style={{ marginTop: 0, marginBottom: 12 }}>
+          Introduce el número de lote y genera automáticamente el informe completo: orden de fabricación, componentes consumidos, movimientos de stock y facturas de venta relacionadas.
+        </p>
+        <form
+          onSubmit={(e) => { e.preventDefault(); openLote(loteInput); }}
+          style={{ display: "flex", gap: 8 }}
+        >
+          <input
+            value={loteInput} onChange={(e) => setLoteInput(e.target.value)}
+            placeholder="Número de lote"
+            style={{ flex: 1, maxWidth: 320 }}
+          />
+          <button className="btn" disabled={detailLoading}>{detailLoading ? "Generando…" : "Generar informe"}</button>
+        </form>
+        {detailError && <p style={{ color: "#b00020", marginBottom: 0 }}>{detailError}</p>}
+      </div>
 
-      <form onSubmit={doSearch} style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-        <input
-          value={q} onChange={(e) => setQ(e.target.value)}
-          placeholder="Ej: lote, PT7221603001, INV/2023/..., WH/MO/..."
-          style={{ flex: 1, maxWidth: 420 }}
-        />
-        <button className="btn" disabled={loading}>{loading ? "Buscando…" : "Buscar"}</button>
-      </form>
-
-      {error && <p style={{ color: "#b00020" }}>{error}</p>}
+      {/* ---- Búsqueda general (por si no se sabe el número exacto de lote) ---- */}
+      <div className="no-print">
+        <h3>O busca por producto, factura u orden</h3>
+        <form onSubmit={doSearch} style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+          <input
+            value={q} onChange={(e) => setQ(e.target.value)}
+            placeholder="Ej: PT7221603001, INV/2023/..., WH/MO/..."
+            style={{ flex: 1, maxWidth: 420 }}
+          />
+          <button className="btn" disabled={loading}>{loading ? "Buscando…" : "Buscar"}</button>
+        </form>
+        {error && <p style={{ color: "#b00020" }}>{error}</p>}
+      </div>
 
       {result && !lote && (
-        <div style={{ display: "grid", gap: 24 }}>
+        <div className="no-print" style={{ display: "grid", gap: 24 }}>
           {result.lots.length > 0 && (
             <section>
               <h3>Lotes ({result.lots.length})</h3>
@@ -67,7 +94,7 @@ export default function Trazabilidad() {
                       <td>{l.cantidad ?? "—"}</td>
                       <td>{l.ubicacion || "—"}</td>
                       <td>{l.creado_el ? fdate(l.creado_el) : "—"}</td>
-                      <td><button className="btn-sm" onClick={() => openLote(l.lote)}>Trazabilidad →</button></td>
+                      <td><button className="btn-sm" onClick={() => openLote(l.lote)}>Informe →</button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -89,7 +116,7 @@ export default function Trazabilidad() {
                       <td>{o.estado || "—"}</td>
                       <td>{o.fecha_final ? fdate(o.fecha_final) : "—"}</td>
                       <td>{o.lote ? <code>{o.lote}</code> : "—"}</td>
-                      <td>{o.lote && <button className="btn-sm" onClick={() => openLote(o.lote as string)}>Trazabilidad →</button>}</td>
+                      <td>{o.lote && <button className="btn-sm" onClick={() => openLote(o.lote as string)}>Informe →</button>}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -143,78 +170,120 @@ export default function Trazabilidad() {
         </div>
       )}
 
-      {lote && (
+      {/* ---- INFORME (pantalla + impresión/PDF) ---- */}
+      {lote && detail && (
         <div>
-          <button className="btn-sm" onClick={() => { setLote(null); setDetail(null); }} style={{ marginBottom: 16 }}>← Volver a resultados</button>
-          <h3>Trazabilidad del lote <code>{lote}</code></h3>
-          {detailLoading && <p>Cargando…</p>}
-          {detail && (
-            <div style={{ display: "grid", gap: 20 }}>
-              {detail.lote && (
-                <section>
-                  <h4>Lote</h4>
-                  <p>
-                    {detail.lote.product_name || detail.lote.product_code} · Cantidad: {detail.lote.cantidad ?? "—"}
-                    {detail.lote.cantidad_real != null && ` (real: ${detail.lote.cantidad_real})`} · Ubicación: {detail.lote.ubicacion || "—"} · Creado: {detail.lote.creado_el ? fdate(detail.lote.creado_el) : "—"}
+          <div className="no-print" style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+            <button className="btn-sm" onClick={() => { setLote(null); setDetail(null); }}>← Volver</button>
+            <button className="btn" onClick={() => window.print()}>Descargar informe (PDF)</button>
+          </div>
+
+          <div id="trace-report">
+            <header style={{ borderBottom: "2px solid var(--ink)", paddingBottom: 12, marginBottom: 20 }}>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--muted)" }}>Land of Nature — Informe de trazabilidad</div>
+              <h2 style={{ margin: "4px 0 0" }}>Lote {lote}</h2>
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>Generado el {new Date().toLocaleString("es-ES")}</div>
+            </header>
+
+            {detail.lote && (
+              <section style={{ marginBottom: 20 }}>
+                <h4>Datos del lote</h4>
+                <table className="adm-table">
+                  <tbody>
+                    <tr><td><b>Producto</b></td><td>{detail.lote.product_name || "—"} {detail.lote.product_code ? `(${detail.lote.product_code})` : ""}</td></tr>
+                    <tr><td><b>Cantidad</b></td><td>{detail.lote.cantidad ?? "—"}{detail.lote.cantidad_real != null ? ` (real: ${detail.lote.cantidad_real})` : ""}</td></tr>
+                    <tr><td><b>Ubicación</b></td><td>{detail.lote.ubicacion || "—"}</td></tr>
+                    <tr><td><b>Creado el</b></td><td>{detail.lote.creado_el ? fdate(detail.lote.creado_el) : "—"}</td></tr>
+                  </tbody>
+                </table>
+              </section>
+            )}
+
+            <section style={{ marginBottom: 20 }}>
+              <h4>Orden(es) de fabricación {detail.orders.length ? `(${detail.orders.length})` : ""}</h4>
+              {detail.orders.length ? (
+                <table className="adm-table">
+                  <thead><tr><th>Referencia</th><th>Producto</th><th>Cantidad</th><th>Estado</th><th>Inicio</th><th>Fin</th><th>BOM</th></tr></thead>
+                  <tbody>
+                    {detail.orders.map((o) => (
+                      <tr key={o.referencia}>
+                        <td><code>{o.referencia}</code></td>
+                        <td>{o.product_name || o.product_code || "—"}</td>
+                        <td>{o.cantidad ?? "—"}</td>
+                        <td>{o.estado || "—"}</td>
+                        <td>{o.fecha_inicio ? fdate(o.fecha_inicio) : "—"}</td>
+                        <td>{o.fecha_final ? fdate(o.fecha_final) : "—"}</td>
+                        <td>{o.bom || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : <p className="lead">No hay orden de fabricación registrada para este lote.</p>}
+            </section>
+
+            <section style={{ marginBottom: 20 }}>
+              <h4>Componentes consumidos {detail.components.length ? `(${detail.components.length})` : ""}</h4>
+              {detail.components.length ? (
+                <table className="adm-table">
+                  <thead><tr><th>Orden</th><th>Componente</th><th>Cantidad</th></tr></thead>
+                  <tbody>
+                    {detail.components.map((c, idx) => (
+                      <tr key={idx}>
+                        <td><code>{c.order_referencia}</code></td>
+                        <td>{c.component_name || c.component_code}</td>
+                        <td>{c.cantidad_consumida ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : <p className="lead">Sin componentes registrados.</p>}
+            </section>
+
+            <section style={{ marginBottom: 20 }}>
+              <h4>Movimientos de stock {detail.moves.length ? `(${detail.moves.length})` : ""}</h4>
+              {detail.moves.length ? (
+                <table className="adm-table">
+                  <thead><tr><th>Fecha</th><th>Referencia</th><th>Desde</th><th>Hasta</th><th>Cantidad</th><th>Estado</th></tr></thead>
+                  <tbody>
+                    {detail.moves.map((m) => (
+                      <tr key={m.id}>
+                        <td>{m.fecha ? fdate(m.fecha) : "—"}</td>
+                        <td>{m.referencia || "—"}</td>
+                        <td>{m.desde || "—"}</td>
+                        <td>{m.hasta || "—"}</td>
+                        <td>{m.cantidad_hecha ?? "—"}</td>
+                        <td>{m.estado || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : <p className="lead">Sin movimientos de stock registrados.</p>}
+            </section>
+
+            <section style={{ marginBottom: 20 }}>
+              <h4>Facturas de venta relacionadas {detail.relatedSales.length ? `(${detail.relatedSales.length})` : ""}</h4>
+              {detail.relatedSales.length ? (
+                <>
+                  <p className="lead" style={{ fontSize: 12 }}>
+                    El ERP no exportó el número de lote a nivel de línea de factura, por lo que esta relación se hace por producto (mismo código), no por lote exacto.
                   </p>
-                </section>
-              )}
-
-              {detail.orders.length > 0 && (
-                <section>
-                  <h4>Orden(es) de fabricación</h4>
-                  {detail.orders.map((o) => (
-                    <div key={o.referencia} style={{ marginBottom: 12 }}>
-                      <p><strong>{o.referencia}</strong> — {o.product_name || o.product_code} · {o.cantidad ?? "—"} uds · {o.estado || "—"} · {o.fecha_final ? fdate(o.fecha_final) : "—"}{o.bom ? ` · BOM: ${o.bom}` : ""}</p>
-                    </div>
-                  ))}
-                </section>
-              )}
-
-              {detail.components.length > 0 && (
-                <section>
-                  <h4>Componentes consumidos ({detail.components.length})</h4>
                   <table className="adm-table">
-                    <thead><tr><th>Orden</th><th>Componente</th><th>Cantidad</th></tr></thead>
+                    <thead><tr><th>Factura</th><th>Cliente</th><th>Fecha</th><th>Cantidad</th></tr></thead>
                     <tbody>
-                      {detail.components.map((c, idx) => (
+                      {detail.relatedSales.map((s, idx) => (
                         <tr key={idx}>
-                          <td><code>{c.order_referencia}</code></td>
-                          <td>{c.component_name || c.component_code}</td>
-                          <td>{c.cantidad_consumida ?? "—"}</td>
+                          <td><code>{s.numero}</code></td>
+                          <td>{s.partner || "—"}</td>
+                          <td>{s.fecha ? fdate(s.fecha) : "—"}</td>
+                          <td>{s.cantidad ?? "—"}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
-                </section>
-              )}
-
-              {detail.moves.length > 0 && (
-                <section>
-                  <h4>Movimientos de stock ({detail.moves.length})</h4>
-                  <table className="adm-table">
-                    <thead><tr><th>Fecha</th><th>Referencia</th><th>Desde</th><th>Hasta</th><th>Cantidad</th><th>Estado</th></tr></thead>
-                    <tbody>
-                      {detail.moves.map((m) => (
-                        <tr key={m.id}>
-                          <td>{m.fecha ? fdate(m.fecha) : "—"}</td>
-                          <td>{m.referencia || "—"}</td>
-                          <td>{m.desde || "—"}</td>
-                          <td>{m.hasta || "—"}</td>
-                          <td>{m.cantidad_hecha ?? "—"}</td>
-                          <td>{m.estado || "—"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </section>
-              )}
-
-              {!detail.orders.length && !detail.components.length && !detail.moves.length && (
-                <p>No hay más datos de trazabilidad asociados a este lote.</p>
-              )}
-            </div>
-          )}
+                </>
+              ) : <p className="lead">No se encontraron facturas de venta de este producto.</p>}
+            </section>
+          </div>
         </div>
       )}
     </div>

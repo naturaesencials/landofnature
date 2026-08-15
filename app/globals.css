@@ -422,3 +422,12 @@ button.adm-kpi:hover{border-color:var(--olive);transform:translateY(-1px)}
 .adm-bar-fill{height:100%;background:var(--olive)}
 .adm-bar-fill.alt{background:#B9A063}
 .adm-bar-wrap span{font-family:var(--font-mono);font-size:10px;color:var(--muted)}
+
+/* Informe de trazabilidad: impresión / PDF */
+@media print{
+  body *{visibility:hidden}
+  #trace-report,#trace-report *{visibility:visible}
+  #trace-report{position:absolute;left:0;top:0;width:100%;padding:20px}
+  .no-print{display:none !important}
+  .adm-table{font-size:11px}
+}
