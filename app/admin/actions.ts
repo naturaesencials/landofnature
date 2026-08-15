@@ -478,6 +478,34 @@ export async function adminErpSearch(query: string): Promise<Res & { result?: Er
   };
 }
 
+/** Si "lote" no tiene match exacto y es solo dígitos, busca la variante con ceros a la izquierda
+ *  (Odoo suele guardar lotes numéricos como "0002448" aunque el usuario escriba "2448"). Comparación
+ *  exacta por regex ^0*input$ para no confundir con lotes distintos que solo comparten sufijo. */
+async function resolveCanonicalLote(
+  supabase: Awaited<ReturnType<typeof adminClient>>,
+  input: string
+): Promise<string> {
+  if (!supabase) return input;
+  const [l, o, m] = await Promise.all([
+    supabase.from("erp_stock_lots").select("lote").eq("lote", input).limit(1),
+    supabase.from("erp_production_orders").select("lote").eq("lote", input).limit(1),
+    supabase.from("erp_stock_moves").select("lote").eq("lote", input).limit(1),
+  ]);
+  if ((l.data ?? []).length || (o.data ?? []).length || (m.data ?? []).length) return input;
+  if (!/^\d+$/.test(input)) return input;
+
+  const pattern = `%${input}`;
+  const [l2, o2, m2] = await Promise.all([
+    supabase.from("erp_stock_lots").select("lote").ilike("lote", pattern).limit(50),
+    supabase.from("erp_production_orders").select("lote").ilike("lote", pattern).limit(50),
+    supabase.from("erp_stock_moves").select("lote").ilike("lote", pattern).limit(50),
+  ]);
+  const candidates = [...(l2.data ?? []), ...(o2.data ?? []), ...(m2.data ?? [])].map((r) => r.lote as string);
+  const re = new RegExp(`^0*${input}$`);
+  const match = candidates.find((c) => re.test(c));
+  return match || input;
+}
+
 export type ErpLoteDetail = {
   lote: { id: number; lote: string; product_code: string | null; product_name: string | null; cantidad: number | null; cantidad_real: number | null; ubicacion: string | null; creado_el: string | null } | null;
   orders: { referencia: string; product_code: string | null; product_name: string | null; cantidad: number | null; estado: string | null; fecha_inicio: string | null; fecha_final: string | null; bom: string | null }[];
@@ -490,9 +518,10 @@ export type ErpLoteDetail = {
 /** Devuelve la cadena completa de trazabilidad para un lote: orden de fabricación, componentes consumidos, movimientos de stock
  *  y facturas de venta. Primero intenta la cadena exacta (lote -> albarán -> pedido de venta -> factura); si no hay match exacto,
  *  cae a una relación aproximada por producto (misma referencia) marcada explícitamente como tal. */
-export async function adminErpLoteDetail(lote: string): Promise<Res & { detail?: ErpLoteDetail }> {
+export async function adminErpLoteDetail(loteInput: string): Promise<Res & { detail?: ErpLoteDetail; canonicalLote?: string }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
+  const lote = await resolveCanonicalLote(supabase, loteInput.trim());
   const [lotRes, ordersRes, movesRes] = await Promise.all([
     supabase.from("erp_stock_lots").select("id,lote,product_code,product_name,cantidad,cantidad_real,ubicacion,creado_el").eq("lote", lote).limit(1).maybeSingle(),
     supabase.from("erp_production_orders").select("referencia,product_code,product_name,cantidad,estado,fecha_inicio,fecha_final,bom").eq("lote", lote),
@@ -559,6 +588,7 @@ export async function adminErpLoteDetail(lote: string): Promise<Res & { detail?:
 
   return {
     ok: true,
+    canonicalLote: lote,
     detail: {
       lote: (lotRes.data ?? null) as ErpLoteDetail["lote"],
       orders: (ordersRes.data ?? []) as ErpLoteDetail["orders"],

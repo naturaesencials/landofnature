@@ -40,6 +40,7 @@ export default function Trazabilidad() {
       setDetailError(`No se encontró ningún dato de trazabilidad para el lote "${clean}".`);
       return;
     }
+    if (res.canonicalLote) setLote(res.canonicalLote);
     setDetail(res.detail ?? null);
   }
 
