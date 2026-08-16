@@ -11,14 +11,21 @@ export default function HistorialPedidos() {
   const [open, setOpen] = useState<string | null>(null);
   const [detail, setDetail] = useState<SaleOrderDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [page, setPage] = useState(0);
+  const [total, setTotal] = useState(0);
+  const PAGE_SIZE = 100;
 
-  async function load(query?: string) {
+  async function load(query?: string, pageNum = 0) {
     setLoading(true);
-    const res = await adminSaleOrdersList({ q: query });
+    const res = await adminSaleOrdersList({ q: query, limit: PAGE_SIZE, offset: pageNum * PAGE_SIZE });
     setLoading(false);
-    if (res.ok) setRows(res.rows ?? []);
+    if (res.ok) { setRows(res.rows ?? []); setTotal(res.total ?? 0); setPage(pageNum); }
   }
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const fromYear = rows.length ? new Date(rows[rows.length - 1].fecha_pedido || "").getFullYear() : null;
+  const toYear = rows.length ? new Date(rows[0].fecha_pedido || "").getFullYear() : null;
 
   async function toggle(ref: string) {
     if (open === ref) { setOpen(null); setDetail(null); return; }
@@ -33,8 +40,9 @@ export default function HistorialPedidos() {
       <p className="lead" style={{ marginTop: 0 }}>
         Pedidos importados del ERP (Odoo) anteriores al lanzamiento de esta web — incluye las notas del equipo.
         No son editables ni se pueden preparar/enviar desde aquí; son solo consulta.
+        {total > 0 && ` ${total.toLocaleString("es-ES")} pedidos en total`}{fromYear && toYear ? ` (${fromYear === toYear ? fromYear : `${fromYear}–${toYear}`} en esta página)` : ""}.
       </p>
-      <form onSubmit={(e) => { e.preventDefault(); load(q); }} style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+      <form onSubmit={(e) => { e.preventDefault(); load(q, 0); }} style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por referencia, cliente o nota" style={{ flex: 1, maxWidth: 400 }} />
         <button className="btn" disabled={loading}>{loading ? "Buscando…" : "Buscar"}</button>
       </form>
@@ -100,6 +108,13 @@ export default function HistorialPedidos() {
         </table>
       </div>
       {!loading && !rows.length && <p className="adm-empty">Sin resultados.</p>}
+      {totalPages > 1 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12 }}>
+          <button className="btn-sm" disabled={page === 0 || loading} onClick={() => load(q, page - 1)}>← Más recientes</button>
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>Página {page + 1} de {totalPages}</span>
+          <button className="btn-sm" disabled={page >= totalPages - 1 || loading} onClick={() => load(q, page + 1)}>Más antiguos →</button>
+        </div>
+      )}
     </div>
   );
 }

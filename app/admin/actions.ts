@@ -468,17 +468,20 @@ export async function adminSaleOrderDetail(referencia: string): Promise<Res & { 
 }
 
 export type SaleOrderListRow = { referencia: string; cliente: string | null; fecha_pedido: string | null; estado: string | null; total: number | null; nota: string | null };
-export async function adminSaleOrdersList(input: { q?: string; limit?: number }): Promise<Res & { rows?: SaleOrderListRow[] }> {
+export async function adminSaleOrdersList(input: { q?: string; limit?: number; offset?: number }): Promise<Res & { rows?: SaleOrderListRow[]; total?: number }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
-  let query = supabase.from("erp_sale_orders").select("referencia,cliente,fecha_pedido,estado,total,nota").order("fecha_pedido", { ascending: false }).limit(input.limit ?? 100);
+  const limit = input.limit ?? 100;
+  const offset = input.offset ?? 0;
+  let query = supabase.from("erp_sale_orders").select("referencia,cliente,fecha_pedido,estado,total,nota", { count: "exact" })
+    .order("fecha_pedido", { ascending: false }).range(offset, offset + limit - 1);
   if (input.q && input.q.trim().length >= 2) {
     const like = `%${input.q.trim()}%`;
     query = query.or(`referencia.ilike.${like},cliente.ilike.${like},referencia_cliente.ilike.${like},nota.ilike.${like}`);
   }
-  const { data, error } = await query;
+  const { data, error, count } = await query;
   if (error) return { ok: false, error: error.message };
-  return { ok: true, rows: (data ?? []) as SaleOrderListRow[] };
+  return { ok: true, rows: (data ?? []) as SaleOrderListRow[], total: count ?? 0 };
 }
 
 /** Clientes reales de la web nueva (no del ERP): agrupa los pedidos de la tabla `orders` por email,
