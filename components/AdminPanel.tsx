@@ -7,6 +7,7 @@ import { fdate, ORDER_STATES, num } from "./admin/types";
 import Resumen from "./admin/Resumen";
 import Facturas from "./admin/Facturas";
 import HistoricoFacturas from "./admin/HistoricoFacturas";
+import FacturaManual from "./admin/FacturaManual";
 import Inventario from "./admin/Inventario";
 import Trazabilidad from "./admin/Trazabilidad";
 import Directorio from "./admin/Directorio";
@@ -173,14 +174,16 @@ function ProductoDetalle({ product, onSaved, onCancel }: { product: Prod; onSave
 
 /* ---------------- Facturas (histórico unificado + cobros/pagos de contratos) ---------------- */
 function FacturasSection(props: { invoices: Invoice[]; payments: Payment[]; clients: Client[]; contracts: Contract[] }) {
-  const [sub, setSub] = useState<"historico" | "cobros">("historico");
+  const [sub, setSub] = useState<"historico" | "crear" | "cobros">("historico");
   return (
     <div>
       <div className="adm-tabs" style={{ marginBottom: 16 }}>
         <button className={sub === "historico" ? "on" : ""} onClick={() => setSub("historico")}>Histórico de Facturas</button>
+        <button className={sub === "crear" ? "on" : ""} onClick={() => setSub("crear")}>Crear factura</button>
         <button className={sub === "cobros" ? "on" : ""} onClick={() => setSub("cobros")}>Cobros y Pagos (contratos)</button>
       </div>
       {sub === "historico" && <HistoricoFacturas />}
+      {sub === "crear" && <FacturaManual />}
       {sub === "cobros" && <Facturas {...props} />}
     </div>
   );

@@ -534,6 +534,50 @@ export async function adminWebCustomers(): Promise<Res & { rows?: WebCustomer[] 
   return { ok: true, rows: Array.from(map.values()).sort((a, b) => b.last_order.localeCompare(a.last_order)) };
 }
 
+import { createManualInvoice, createCreditNote, type ManualInvoiceInput, type CreditNoteInput } from "@/lib/invoice";
+
+/* ---------------- Facturación manual y rectificativas ---------------- */
+
+export async function adminCreateManualInvoice(input: ManualInvoiceInput): Promise<Res & { numero?: string }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const res = await createManualInvoice(input);
+  if (!res.ok) return { ok: false, error: res.error };
+  return { ok: true, numero: res.numero };
+}
+
+export type InvoiceForRectify = { id: string; numero: string; customer_name: string; total: number; issue_date: string };
+export async function adminInvoicesForRectify(q: string): Promise<Res & { rows?: InvoiceForRectify[] }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  if (q.trim().length < 2) return { ok: true, rows: [] };
+  const like = `%${q.trim()}%`;
+  const { data, error } = await supabase.from("native_invoices")
+    .select("id,numero,customer_name,total,issue_date")
+    .eq("kind", "invoice")
+    .or(`numero.ilike.${like},customer_name.ilike.${like}`)
+    .order("issue_date", { ascending: false }).limit(20);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, rows: (data ?? []) as InvoiceForRectify[] };
+}
+
+export type InvoiceLinesForRectify = { description: string; quantity: number; unit_price: number; vat_rate: number }[];
+export async function adminInvoiceLinesForRectify(invoiceId: string): Promise<Res & { lines?: InvoiceLinesForRectify }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const { data, error } = await supabase.from("native_invoice_lines").select("description,quantity,unit_price,vat_rate").eq("invoice_id", invoiceId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, lines: (data ?? []) as InvoiceLinesForRectify };
+}
+
+export async function adminCreateCreditNote(input: CreditNoteInput): Promise<Res & { numero?: string }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const res = await createCreditNote(input);
+  if (!res.ok) return { ok: false, error: res.error };
+  return { ok: true, numero: res.numero };
+}
+
 /* ---------------- Histórico de facturas (nuevas + importadas de Odoo) ---------------- */
 
 export type InvoiceHistoryRow = {
