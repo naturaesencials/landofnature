@@ -41,7 +41,7 @@ export default function HistorialPedidos() {
 
       <div className="adm-tablewrap">
         <table className="adm-table">
-          <thead><tr><th>Referencia</th><th>Cliente</th><th>Fecha</th><th className="r">Total</th><th>Estado</th><th /></tr></thead>
+          <thead><tr><th>Referencia</th><th>Cliente</th><th>Fecha</th><th className="r">Total</th><th>Estado</th><th>Nota</th><th /></tr></thead>
           <tbody>
             {rows.map((o) => (
               <Fragment key={o.referencia}>
@@ -51,10 +51,11 @@ export default function HistorialPedidos() {
                   <td>{o.fecha_pedido ? fdate(o.fecha_pedido) : "—"}</td>
                   <td className="r">{o.total != null ? euro(o.total) : "—"}</td>
                   <td>{o.estado || "—"}</td>
+                  <td style={{ whiteSpace: "pre-wrap", maxWidth: 260, fontSize: 12 }}>{o.nota || "—"}</td>
                   <td className="c"><button className="adm-link" onClick={() => toggle(o.referencia)}>{open === o.referencia ? "Ocultar" : "Ver"}</button></td>
                 </tr>
                 {open === o.referencia && (
-                  <tr className="adm-detail"><td colSpan={6}>
+                  <tr className="adm-detail"><td colSpan={7}>
                     {detailLoading && <p>Cargando…</p>}
                     {detail && (
                       <div>
