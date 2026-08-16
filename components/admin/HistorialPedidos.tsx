@@ -75,6 +75,21 @@ export default function HistorialPedidos() {
                             {detail.order.referencia_cliente ? ` · Ref. cliente: ${detail.order.referencia_cliente}` : ""}
                           </div>
                         )}
+                        {detail.messages.length > 0 && (
+                          <div style={{ marginTop: 14 }}>
+                            <div className="adm-dt">Conversación interna ({detail.messages.length})</div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
+                              {detail.messages.map((m, i) => (
+                                <div key={i} style={{ borderLeft: "2px solid var(--line)", paddingLeft: 10 }}>
+                                  <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                                    <b>{m.autor || "—"}</b>{m.fecha ? ` · ${new Date(m.fecha).toLocaleString("es-ES", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}
+                                  </div>
+                                  <div style={{ fontSize: 13, whiteSpace: "pre-wrap" }}>{m.contenido}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </td></tr>

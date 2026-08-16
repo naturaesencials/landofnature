@@ -454,15 +454,17 @@ export async function adminPartnerOrders(partnerId: string): Promise<Res & { row
 export type SaleOrderDetail = {
   order: { referencia: string; cliente: string | null; comercial: string | null; estado: string | null; fecha_pedido: string | null; total: number | null; plazos_pago: string | null; referencia_cliente: string | null; nota: string | null } | null;
   lines: { product_code: string | null; product_name: string | null; cantidad: number | null; precio_unitario: number | null; subtotal: number | null; descripcion: string | null }[];
+  messages: { autor: string | null; fecha: string | null; contenido: string | null }[];
 };
 export async function adminSaleOrderDetail(referencia: string): Promise<Res & { detail?: SaleOrderDetail }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
-  const [o, l] = await Promise.all([
+  const [o, l, m] = await Promise.all([
     supabase.from("erp_sale_orders").select("referencia,cliente,comercial,estado,fecha_pedido,total,plazos_pago,referencia_cliente,nota").eq("referencia", referencia).maybeSingle(),
     supabase.from("erp_sale_order_lines").select("product_code,product_name,cantidad,precio_unitario,subtotal,descripcion").eq("order_referencia", referencia),
+    supabase.from("erp_sale_order_messages").select("autor,fecha,contenido").eq("order_referencia", referencia).order("fecha", { ascending: true }),
   ]);
-  return { ok: true, detail: { order: (o.data ?? null) as SaleOrderDetail["order"], lines: (l.data ?? []) as SaleOrderDetail["lines"] } };
+  return { ok: true, detail: { order: (o.data ?? null) as SaleOrderDetail["order"], lines: (l.data ?? []) as SaleOrderDetail["lines"], messages: (m.data ?? []) as SaleOrderDetail["messages"] } };
 }
 
 export type SaleOrderListRow = { referencia: string; cliente: string | null; fecha_pedido: string | null; estado: string | null; total: number | null; nota: string | null };
