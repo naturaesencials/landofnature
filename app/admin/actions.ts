@@ -541,16 +541,19 @@ export type InvoiceHistoryRow = {
   estado: string | null; origen: "nueva" | "odoo"; kind?: "invoice" | "credit_note"; id?: string;
 };
 
-export async function adminInvoiceHistoryList(input: { q?: string; limit?: number }): Promise<Res & { rows?: InvoiceHistoryRow[] }> {
+export async function adminInvoiceHistoryList(input: { q?: string; year?: number; limit?: number }): Promise<Res & { rows?: InvoiceHistoryRow[]; nativeTotal?: number; erpTotal?: number }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
-  const limit = input.limit ?? 200;
+  const limit = input.year ? 1000 : (input.limit ?? 200);
   const like = input.q && input.q.trim().length >= 2 ? `%${input.q.trim()}%` : null;
 
-  let nativeQuery = supabase.from("native_invoices").select("id,numero,issue_date,customer_name,total,status,kind").order("issue_date", { ascending: false }).limit(limit);
+  let nativeQuery = supabase.from("native_invoices").select("id,numero,issue_date,customer_name,total,status,kind", { count: "exact" }).order("issue_date", { ascending: false }).limit(limit);
   if (like) nativeQuery = nativeQuery.or(`numero.ilike.${like},customer_name.ilike.${like}`);
-  let erpQuery = supabase.from("erp_invoices_sale").select("numero,fecha,partner,total,estado").order("fecha", { ascending: false }).limit(limit);
+  if (input.year) nativeQuery = nativeQuery.gte("issue_date", `${input.year}-01-01`).lt("issue_date", `${input.year + 1}-01-01`);
+
+  let erpQuery = supabase.from("erp_invoices_sale").select("numero,fecha,partner,total,estado", { count: "exact" }).order("fecha", { ascending: false }).limit(limit);
   if (like) erpQuery = erpQuery.or(`numero.ilike.${like},partner.ilike.${like}`);
+  if (input.year) erpQuery = erpQuery.gte("fecha", `${input.year}-01-01`).lt("fecha", `${input.year + 1}-01-01`);
 
   const [nativeRes, erpRes] = await Promise.all([nativeQuery, erpQuery]);
   if (nativeRes.error) return { ok: false, error: nativeRes.error.message };
@@ -567,7 +570,21 @@ export async function adminInvoiceHistoryList(input: { q?: string; limit?: numbe
     })),
   ].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
 
-  return { ok: true, rows: rows.slice(0, limit) };
+  return { ok: true, rows: rows.slice(0, limit), nativeTotal: nativeRes.count ?? 0, erpTotal: erpRes.count ?? 0 };
+}
+
+export async function adminInvoiceHistoryYears(): Promise<Res & { years?: { year: number; count: number }[] }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const [nativeRes, erpRes] = await Promise.all([
+    supabase.from("native_invoices").select("issue_date"),
+    supabase.from("erp_invoices_sale").select("fecha").not("fecha", "is", null),
+  ]);
+  const counts = new Map<number, number>();
+  for (const r of nativeRes.data ?? []) { const y = new Date(r.issue_date as string).getFullYear(); counts.set(y, (counts.get(y) ?? 0) + 1); }
+  for (const r of erpRes.data ?? []) { const y = new Date(r.fecha as string).getFullYear(); counts.set(y, (counts.get(y) ?? 0) + 1); }
+  const years = Array.from(counts.entries()).map(([year, count]) => ({ year, count })).sort((a, b) => b.year - a.year);
+  return { ok: true, years };
 }
 
 export async function adminInvoicePdfUrl(invoiceId: string): Promise<Res & { url?: string }> {
@@ -638,6 +655,29 @@ export async function adminPartnerInvoices(name: string, kind: "cliente" | "prov
 }
 
 /* ---------------- Histórico ERP (Odoo) / Trazabilidad ---------------- */
+
+export async function adminErpProductionOrdersYears(): Promise<Res & { years?: { year: number; count: number }[] }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const { data, error } = await supabase.from("erp_production_orders").select("fecha_final").not("fecha_final", "is", null);
+  if (error) return { ok: false, error: error.message };
+  const counts = new Map<number, number>();
+  for (const r of data ?? []) { const y = new Date(r.fecha_final as string).getFullYear(); counts.set(y, (counts.get(y) ?? 0) + 1); }
+  const years = Array.from(counts.entries()).map(([year, count]) => ({ year, count })).sort((a, b) => b.year - a.year);
+  return { ok: true, years };
+}
+
+export type ProductionOrderByYearRow = { referencia: string; product_code: string | null; product_name: string | null; cantidad: number | null; estado: string | null; fecha_final: string | null; lote: string | null };
+export async function adminErpProductionOrdersByYear(year: number, offset = 0, limit = 100): Promise<Res & { rows?: ProductionOrderByYearRow[]; total?: number }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const { data, error, count } = await supabase.from("erp_production_orders")
+    .select("referencia,product_code,product_name,cantidad,estado,fecha_final,lote", { count: "exact" })
+    .gte("fecha_final", `${year}-01-01`).lt("fecha_final", `${year + 1}-01-01`)
+    .order("fecha_final", { ascending: false }).range(offset, offset + limit - 1);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, rows: (data ?? []) as ProductionOrderByYearRow[], total: count ?? 0 };
+}
 
 export type ErpSearchResult = {
   lots: { id: number; lote: string; product_code: string | null; product_name: string | null; cantidad: number | null; ubicacion: string | null; creado_el: string | null }[];

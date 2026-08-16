@@ -1,10 +1,11 @@
 "use client";
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { euro } from "@/lib/types";
 import { fdate } from "./types";
 import {
   adminErpSearch, adminErpLoteDetail, adminErpLoteCandidates, adminErpProductPurchaseHistory,
-  type ErpSearchResult, type ErpLoteDetail, type PurchaseHistoryRow,
+  adminErpProductionOrdersYears, adminErpProductionOrdersByYear,
+  type ErpSearchResult, type ErpLoteDetail, type PurchaseHistoryRow, type ProductionOrderByYearRow,
 } from "@/app/admin/actions";
 
 type Candidate = { product_code: string | null; product_name: string | null };
@@ -26,6 +27,35 @@ export default function Trazabilidad() {
   const [openPurchaseFor, setOpenPurchaseFor] = useState<string | null>(null);
   const [purchaseRows, setPurchaseRows] = useState<PurchaseHistoryRow[] | null>(null);
   const [purchaseLoading, setPurchaseLoading] = useState(false);
+
+  const [prodYears, setProdYears] = useState<{ year: number; count: number }[]>([]);
+  const [prodYear, setProdYear] = useState<number | null>(null);
+  const [prodRows, setProdRows] = useState<ProductionOrderByYearRow[]>([]);
+  const [prodPage, setProdPage] = useState(0);
+  const [prodTotal, setProdTotal] = useState(0);
+  const [prodLoading, setProdLoading] = useState(false);
+  const PROD_PAGE_SIZE = 100;
+
+  useEffect(() => { adminErpProductionOrdersYears().then((res) => { if (res.ok) setProdYears(res.years ?? []); }); }, []);
+
+  async function selectProdYear(y: number | null) {
+    setProdYear(y);
+    setResult(null); setLote(null); setDetail(null);
+    if (y === null) { setProdRows([]); return; }
+    setProdLoading(true);
+    const res = await adminErpProductionOrdersByYear(y, 0, PROD_PAGE_SIZE);
+    setProdLoading(false);
+    if (res.ok) { setProdRows(res.rows ?? []); setProdTotal(res.total ?? 0); setProdPage(0); }
+  }
+
+  async function prodGoPage(p: number) {
+    if (!prodYear) return;
+    setProdLoading(true);
+    const res = await adminErpProductionOrdersByYear(prodYear, p * PROD_PAGE_SIZE, PROD_PAGE_SIZE);
+    setProdLoading(false);
+    if (res.ok) { setProdRows(res.rows ?? []); setProdPage(p); }
+  }
+  const prodTotalPages = Math.max(1, Math.ceil(prodTotal / PROD_PAGE_SIZE));
 
   async function togglePurchaseHistory(componentCode: string | null) {
     if (!componentCode) return;
@@ -117,6 +147,51 @@ export default function Trazabilidad() {
           </div>
         )}
         {detailError && <p style={{ color: "#b00020", marginBottom: 0, marginTop: 10 }}>{detailError}</p>}
+      </div>
+
+      {/* ---- Explorar órdenes de fabricación por año ---- */}
+      <div className="no-print" style={{ marginBottom: 24 }}>
+        <h3>Explorar fabricación por año</h3>
+        {prodYears.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+            <button className={prodYear === null ? "btn-sm on" : "btn-sm"} onClick={() => selectProdYear(null)}>
+              Ninguno <span style={{ opacity: 0.6 }}>({prodYears.reduce((s, y) => s + y.count, 0)})</span>
+            </button>
+            {prodYears.map((y) => (
+              <button key={y.year} className={prodYear === y.year ? "btn-sm on" : "btn-sm"} onClick={() => selectProdYear(y.year)}>
+                {y.year} <span style={{ opacity: 0.6 }}>({y.count})</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {prodLoading && <p>Cargando…</p>}
+        {prodYear && !prodLoading && (
+          <>
+            <table className="adm-table">
+              <thead><tr><th>Referencia</th><th>Producto</th><th>Cantidad</th><th>Estado</th><th>Fecha</th><th>Lote</th><th /></tr></thead>
+              <tbody>
+                {prodRows.map((o) => (
+                  <tr key={o.referencia}>
+                    <td><code>{o.referencia}</code></td>
+                    <td>{o.product_name || o.product_code || "—"}</td>
+                    <td>{o.cantidad ?? "—"}</td>
+                    <td>{o.estado || "—"}</td>
+                    <td>{o.fecha_final ? fdate(o.fecha_final) : "—"}</td>
+                    <td>{o.lote ? <code>{o.lote}</code> : "—"}</td>
+                    <td>{o.lote && <button className="btn-sm" onClick={() => openLote(o.lote as string, o.product_code || undefined)}>Informe →</button>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {prodTotalPages > 1 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
+                <button className="btn-sm" disabled={prodPage === 0} onClick={() => prodGoPage(prodPage - 1)}>← Más recientes</button>
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>Página {prodPage + 1} de {prodTotalPages}</span>
+                <button className="btn-sm" disabled={prodPage >= prodTotalPages - 1} onClick={() => prodGoPage(prodPage + 1)}>Más antiguos →</button>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {/* ---- Búsqueda general (por si no se sabe el número exacto de lote) ---- */}
