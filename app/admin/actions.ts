@@ -512,6 +512,52 @@ export async function adminWebCustomers(): Promise<Res & { rows?: WebCustomer[] 
   return { ok: true, rows: Array.from(map.values()).sort((a, b) => b.last_order.localeCompare(a.last_order)) };
 }
 
+/* ---------------- Histórico de facturas (nuevas + importadas de Odoo) ---------------- */
+
+export type InvoiceHistoryRow = {
+  numero: string; fecha: string | null; cliente: string | null; total: number | null;
+  estado: string | null; origen: "nueva" | "odoo"; kind?: "invoice" | "credit_note"; id?: string;
+};
+
+export async function adminInvoiceHistoryList(input: { q?: string; limit?: number }): Promise<Res & { rows?: InvoiceHistoryRow[] }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const limit = input.limit ?? 200;
+  const like = input.q && input.q.trim().length >= 2 ? `%${input.q.trim()}%` : null;
+
+  let nativeQuery = supabase.from("native_invoices").select("id,numero,issue_date,customer_name,total,status,kind").order("issue_date", { ascending: false }).limit(limit);
+  if (like) nativeQuery = nativeQuery.or(`numero.ilike.${like},customer_name.ilike.${like}`);
+  let erpQuery = supabase.from("erp_invoices_sale").select("numero,fecha,partner,total,estado").order("fecha", { ascending: false }).limit(limit);
+  if (like) erpQuery = erpQuery.or(`numero.ilike.${like},partner.ilike.${like}`);
+
+  const [nativeRes, erpRes] = await Promise.all([nativeQuery, erpQuery]);
+  if (nativeRes.error) return { ok: false, error: nativeRes.error.message };
+  if (erpRes.error) return { ok: false, error: erpRes.error.message };
+
+  const rows: InvoiceHistoryRow[] = [
+    ...(nativeRes.data ?? []).map((i) => ({
+      numero: i.numero, fecha: i.issue_date, cliente: i.customer_name, total: i.total,
+      estado: i.status, origen: "nueva" as const, kind: i.kind as "invoice" | "credit_note", id: i.id,
+    })),
+    ...(erpRes.data ?? []).map((i) => ({
+      numero: i.numero, fecha: i.fecha, cliente: i.partner, total: i.total,
+      estado: i.estado, origen: "odoo" as const,
+    })),
+  ].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
+
+  return { ok: true, rows: rows.slice(0, limit) };
+}
+
+export async function adminInvoicePdfUrl(invoiceId: string): Promise<Res & { url?: string }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const { data: inv } = await supabase.from("native_invoices").select("pdf_path").eq("id", invoiceId).maybeSingle();
+  if (!inv?.pdf_path) return { ok: false, error: "Esta factura no tiene PDF generado." };
+  const { data, error } = await supabase.storage.from("invoices").createSignedUrl(inv.pdf_path, 300);
+  if (error || !data) return { ok: false, error: error?.message || "No se pudo generar el enlace." };
+  return { ok: true, url: data.signedUrl };
+}
+
 /* ---------------- Directorio de clientes y proveedores ---------------- */
 
 export type Partner = {

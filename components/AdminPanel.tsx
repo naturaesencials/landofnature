@@ -6,6 +6,7 @@ import type { Prod, Order, Req, Client, TariffPrice, ClientOrder, Warehouse, Inv
 import { fdate, ORDER_STATES, num } from "./admin/types";
 import Resumen from "./admin/Resumen";
 import Facturas from "./admin/Facturas";
+import HistoricoFacturas from "./admin/HistoricoFacturas";
 import Inventario from "./admin/Inventario";
 import Trazabilidad from "./admin/Trazabilidad";
 import Directorio from "./admin/Directorio";
@@ -51,7 +52,7 @@ export default function AdminPanel(p: Props) {
       {tab === "inventario" && <Inventario products={p.products} warehouses={p.warehouses} levels={p.inventoryLevels} />}
       {tab === "trazabilidad" && <Trazabilidad />}
       {tab === "pedidos" && <PedidosSection orders={p.orders} />}
-      {tab === "facturas" && <Facturas invoices={p.invoices} payments={p.payments} clients={p.clients} contracts={p.contracts} />}
+      {tab === "facturas" && <FacturasSection invoices={p.invoices} payments={p.payments} clients={p.clients} contracts={p.contracts} />}
       {tab === "clientes" && <ClientesWeb />}
       {tab === "directorio" && <Directorio />}
     </div>
@@ -166,6 +167,21 @@ function ProductoDetalle({ product, onSaved, onCancel }: { product: Prod; onSave
         <button className="adm-link" onClick={onCancel}>Cancelar</button>
         {err && <span className="adm-err">{err}</span>}
       </div>
+    </div>
+  );
+}
+
+/* ---------------- Facturas (histórico unificado + cobros/pagos de contratos) ---------------- */
+function FacturasSection(props: { invoices: Invoice[]; payments: Payment[]; clients: Client[]; contracts: Contract[] }) {
+  const [sub, setSub] = useState<"historico" | "cobros">("historico");
+  return (
+    <div>
+      <div className="adm-tabs" style={{ marginBottom: 16 }}>
+        <button className={sub === "historico" ? "on" : ""} onClick={() => setSub("historico")}>Histórico de Facturas</button>
+        <button className={sub === "cobros" ? "on" : ""} onClick={() => setSub("cobros")}>Cobros y Pagos (contratos)</button>
+      </div>
+      {sub === "historico" && <HistoricoFacturas />}
+      {sub === "cobros" && <Facturas {...props} />}
     </div>
   );
 }
