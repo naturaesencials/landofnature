@@ -2,7 +2,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { euro } from "@/lib/types";
 import { fdate } from "./types";
-import { adminSaleOrdersList, adminSaleOrderDetail, type SaleOrderListRow, type SaleOrderDetail } from "@/app/admin/actions";
+import { adminSaleOrdersList, adminSaleOrderDetail, adminSaleOrdersYears, type SaleOrderListRow, type SaleOrderDetail } from "@/app/admin/actions";
 
 export default function HistorialPedidos() {
   const [q, setQ] = useState("");
@@ -13,15 +13,25 @@ export default function HistorialPedidos() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
+  const [years, setYears] = useState<{ year: number; count: number }[]>([]);
+  const [year, setYear] = useState<number | null>(null);
   const PAGE_SIZE = 100;
 
-  async function load(query?: string, pageNum = 0) {
+  async function load(query?: string, pageNum = 0, y?: number | null) {
     setLoading(true);
-    const res = await adminSaleOrdersList({ q: query, limit: PAGE_SIZE, offset: pageNum * PAGE_SIZE });
+    const res = await adminSaleOrdersList({ q: query, limit: PAGE_SIZE, offset: pageNum * PAGE_SIZE, year: y ?? undefined });
     setLoading(false);
     if (res.ok) { setRows(res.rows ?? []); setTotal(res.total ?? 0); setPage(pageNum); }
   }
-  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    load();
+    adminSaleOrdersYears().then((res) => { if (res.ok) setYears(res.years ?? []); });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function selectYear(y: number | null) {
+    setYear(y);
+    load(q, 0, y);
+  }
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const fromYear = rows.length ? new Date(rows[rows.length - 1].fecha_pedido || "").getFullYear() : null;
@@ -42,10 +52,23 @@ export default function HistorialPedidos() {
         No son editables ni se pueden preparar/enviar desde aquí; son solo consulta.
         {total > 0 && ` ${total.toLocaleString("es-ES")} pedidos en total`}{fromYear && toYear ? ` (${fromYear === toYear ? fromYear : `${fromYear}–${toYear}`} en esta página)` : ""}.
       </p>
-      <form onSubmit={(e) => { e.preventDefault(); load(q, 0); }} style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+      <form onSubmit={(e) => { e.preventDefault(); load(q, 0, year); }} style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por referencia, cliente o nota" style={{ flex: 1, maxWidth: 400 }} />
         <button className="btn" disabled={loading}>{loading ? "Buscando…" : "Buscar"}</button>
       </form>
+
+      {years.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
+          <button className={year === null ? "btn-sm on" : "btn-sm"} onClick={() => selectYear(null)}>
+            Todos <span style={{ opacity: 0.6 }}>({total || years.reduce((s, y) => s + y.count, 0)})</span>
+          </button>
+          {years.map((y) => (
+            <button key={y.year} className={year === y.year ? "btn-sm on" : "btn-sm"} onClick={() => selectYear(y.year)}>
+              {y.year} <span style={{ opacity: 0.6 }}>({y.count})</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="adm-tablewrap">
         <table className="adm-table">
@@ -110,9 +133,9 @@ export default function HistorialPedidos() {
       {!loading && !rows.length && <p className="adm-empty">Sin resultados.</p>}
       {totalPages > 1 && (
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12 }}>
-          <button className="btn-sm" disabled={page === 0 || loading} onClick={() => load(q, page - 1)}>← Más recientes</button>
+          <button className="btn-sm" disabled={page === 0 || loading} onClick={() => load(q, page - 1, year)}>← Más recientes</button>
           <span style={{ fontSize: 12, color: "var(--muted)" }}>Página {page + 1} de {totalPages}</span>
-          <button className="btn-sm" disabled={page >= totalPages - 1 || loading} onClick={() => load(q, page + 1)}>Más antiguos →</button>
+          <button className="btn-sm" disabled={page >= totalPages - 1 || loading} onClick={() => load(q, page + 1, year)}>Más antiguos →</button>
         </div>
       )}
     </div>

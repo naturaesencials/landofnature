@@ -468,7 +468,7 @@ export async function adminSaleOrderDetail(referencia: string): Promise<Res & { 
 }
 
 export type SaleOrderListRow = { referencia: string; cliente: string | null; fecha_pedido: string | null; estado: string | null; total: number | null; nota: string | null };
-export async function adminSaleOrdersList(input: { q?: string; limit?: number; offset?: number }): Promise<Res & { rows?: SaleOrderListRow[]; total?: number }> {
+export async function adminSaleOrdersList(input: { q?: string; year?: number; limit?: number; offset?: number }): Promise<Res & { rows?: SaleOrderListRow[]; total?: number }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
   const limit = input.limit ?? 100;
@@ -479,9 +479,26 @@ export async function adminSaleOrdersList(input: { q?: string; limit?: number; o
     const like = `%${input.q.trim()}%`;
     query = query.or(`referencia.ilike.${like},cliente.ilike.${like},referencia_cliente.ilike.${like},nota.ilike.${like}`);
   }
+  if (input.year) {
+    query = query.gte("fecha_pedido", `${input.year}-01-01`).lt("fecha_pedido", `${input.year + 1}-01-01`);
+  }
   const { data, error, count } = await query;
   if (error) return { ok: false, error: error.message };
   return { ok: true, rows: (data ?? []) as SaleOrderListRow[], total: count ?? 0 };
+}
+
+export async function adminSaleOrdersYears(): Promise<Res & { years?: { year: number; count: number }[] }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const { data, error } = await supabase.from("erp_sale_orders").select("fecha_pedido").not("fecha_pedido", "is", null);
+  if (error) return { ok: false, error: error.message };
+  const counts = new Map<number, number>();
+  for (const r of data ?? []) {
+    const y = new Date(r.fecha_pedido as string).getFullYear();
+    counts.set(y, (counts.get(y) ?? 0) + 1);
+  }
+  const years = Array.from(counts.entries()).map(([year, count]) => ({ year, count })).sort((a, b) => b.year - a.year);
+  return { ok: true, years };
 }
 
 /** Clientes reales de la web nueva (no del ERP): agrupa los pedidos de la tabla `orders` por email,
