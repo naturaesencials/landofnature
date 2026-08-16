@@ -178,6 +178,27 @@ export default function Trazabilidad() {
             </section>
           )}
 
+          {result.saleOrders.length > 0 && (
+            <section>
+              <h3>Pedidos de venta ({result.saleOrders.length})</h3>
+              <table className="adm-table">
+                <thead><tr><th>Referencia</th><th>Cliente</th><th>Fecha</th><th>Total</th><th>Estado</th><th>Nota</th></tr></thead>
+                <tbody>
+                  {result.saleOrders.map((o) => (
+                    <tr key={o.referencia}>
+                      <td><code>{o.referencia}</code></td>
+                      <td>{o.cliente || "—"}</td>
+                      <td>{o.fecha_pedido ? fdate(o.fecha_pedido) : "—"}</td>
+                      <td>{o.total != null ? euro(o.total) : "—"}</td>
+                      <td>{o.estado || "—"}</td>
+                      <td style={{ whiteSpace: "pre-wrap", maxWidth: 260, fontSize: 12 }}>{o.nota || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          )}
+
           {result.salesInvoices.length > 0 && (
             <section>
               <h3>Facturas de venta ({result.salesInvoices.length})</h3>
@@ -218,7 +239,7 @@ export default function Trazabilidad() {
             </section>
           )}
 
-          {!result.lots.length && !result.orders.length && !result.salesInvoices.length && !result.purchaseInvoices.length && (
+          {!result.lots.length && !result.orders.length && !result.salesInvoices.length && !result.purchaseInvoices.length && !result.saleOrders.length && (
             <p>Sin resultados para “{q}”.</p>
           )}
         </div>

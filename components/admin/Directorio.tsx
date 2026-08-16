@@ -3,8 +3,8 @@ import { useEffect, useState } from "react";
 import { euro } from "@/lib/types";
 import { fdate } from "./types";
 import {
-  adminPartnersList, adminUpdatePartner, adminPartnerInvoices, adminPartnersCounts,
-  type Partner, type PartnerInvoiceRow,
+  adminPartnersList, adminUpdatePartner, adminPartnerInvoices, adminPartnersCounts, adminPartnerOrders,
+  type Partner, type PartnerInvoiceRow, type PartnerOrderRow,
 } from "@/app/admin/actions";
 
 type Kind = "cliente" | "proveedor";
@@ -72,6 +72,8 @@ function PartnerModal({ partner, kind, onClose, onSaved }: {
   const [saving, setSaving] = useState(false);
   const [invoices, setInvoices] = useState<PartnerInvoiceRow[] | null>(null);
   const [invLoading, setInvLoading] = useState(true);
+  const [orders, setOrders] = useState<PartnerOrderRow[] | null>(null);
+  const [ordLoading, setOrdLoading] = useState(kind === "cliente");
 
   useEffect(() => {
     setInvLoading(true);
@@ -79,6 +81,13 @@ function PartnerModal({ partner, kind, onClose, onSaved }: {
       setInvLoading(false);
       if (res.ok) setInvoices(res.rows ?? []);
     });
+    if (kind === "cliente") {
+      setOrdLoading(true);
+      adminPartnerOrders(partner.id).then((res) => {
+        setOrdLoading(false);
+        if (res.ok) setOrders(res.rows ?? []);
+      });
+    }
   }, [partner, kind]);
 
   async function save() {
@@ -109,6 +118,31 @@ function PartnerModal({ partner, kind, onClose, onSaved }: {
           <label style={{ gridColumn: "1 / -1" }}>Notas<input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></label>
         </div>
         <button className="btn" onClick={save} disabled={saving}>{saving ? "Guardando…" : "Guardar cambios"}</button>
+
+        {kind === "cliente" && (
+          <>
+            <h4 style={{ marginTop: 24 }}>Pedidos (histórico ERP) {orders ? `(${orders.length})` : ""}</h4>
+            {ordLoading && <p>Cargando…</p>}
+            {orders && (
+              orders.length ? (
+                <table className="adm-table">
+                  <thead><tr><th>Referencia</th><th>Fecha</th><th>Estado</th><th>Total</th><th>Nota</th></tr></thead>
+                  <tbody>
+                    {orders.slice(0, 50).map((o) => (
+                      <tr key={o.referencia}>
+                        <td><code>{o.referencia}</code></td>
+                        <td>{o.fecha_pedido ? fdate(o.fecha_pedido) : "—"}</td>
+                        <td>{o.estado || "—"}</td>
+                        <td>{o.total != null ? euro(o.total) : "—"}</td>
+                        <td style={{ whiteSpace: "pre-wrap", maxWidth: 320, fontSize: 12 }}>{o.nota || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : <p className="lead">Sin pedidos registrados.</p>
+            )}
+          </>
+        )}
 
         <h4 style={{ marginTop: 24 }}>Facturas de {kind === "cliente" ? "venta" : "compra"} {invoices ? `(${invoices.length})` : ""}</h4>
         {invLoading && <p>Cargando…</p>}

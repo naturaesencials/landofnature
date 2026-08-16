@@ -436,6 +436,35 @@ export async function adminInventoryHistory(input: { from?: string; to?: string;
   return { ok: true, rows: (data ?? []) as InvHistoryRow[] };
 }
 
+export type PartnerOrderRow = {
+  referencia: string; fecha_pedido: string | null; estado: string | null; total: number | null; nota: string | null;
+};
+export async function adminPartnerOrders(partnerId: string): Promise<Res & { rows?: PartnerOrderRow[] }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const { data, error } = await supabase.from("erp_sale_orders")
+    .select("referencia,fecha_pedido,estado,total,nota")
+    .eq("partner_id", partnerId)
+    .order("fecha_pedido", { ascending: false })
+    .limit(300);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, rows: (data ?? []) as PartnerOrderRow[] };
+}
+
+export type SaleOrderDetail = {
+  order: { referencia: string; cliente: string | null; comercial: string | null; estado: string | null; fecha_pedido: string | null; total: number | null; plazos_pago: string | null; referencia_cliente: string | null; nota: string | null } | null;
+  lines: { product_code: string | null; product_name: string | null; cantidad: number | null; precio_unitario: number | null; subtotal: number | null; descripcion: string | null }[];
+};
+export async function adminSaleOrderDetail(referencia: string): Promise<Res & { detail?: SaleOrderDetail }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const [o, l] = await Promise.all([
+    supabase.from("erp_sale_orders").select("referencia,cliente,comercial,estado,fecha_pedido,total,plazos_pago,referencia_cliente,nota").eq("referencia", referencia).maybeSingle(),
+    supabase.from("erp_sale_order_lines").select("product_code,product_name,cantidad,precio_unitario,subtotal,descripcion").eq("order_referencia", referencia),
+  ]);
+  return { ok: true, detail: { order: (o.data ?? null) as SaleOrderDetail["order"], lines: (l.data ?? []) as SaleOrderDetail["lines"] } };
+}
+
 /* ---------------- Directorio de clientes y proveedores ---------------- */
 
 export type Partner = {
@@ -500,6 +529,7 @@ export type ErpSearchResult = {
   orders: { referencia: string; product_code: string | null; product_name: string | null; cantidad: number | null; estado: string | null; fecha_final: string | null; lote: string | null }[];
   salesInvoices: { numero: string; partner: string | null; fecha: string | null; total: number | null; estado: string | null }[];
   purchaseInvoices: { numero: string; partner: string | null; fecha: string | null; total: number | null; estado: string | null }[];
+  saleOrders: { referencia: string; cliente: string | null; fecha_pedido: string | null; total: number | null; estado: string | null; nota: string | null }[];
 };
 
 export async function adminErpSearch(query: string): Promise<Res & { result?: ErpSearchResult }> {
@@ -509,7 +539,7 @@ export async function adminErpSearch(query: string): Promise<Res & { result?: Er
   if (q.length < 2) return { ok: false, error: "Escribe al menos 2 caracteres." };
   const like = `%${q}%`;
 
-  const [lots, orders, salesInvoices, purchaseInvoices] = await Promise.all([
+  const [lots, orders, salesInvoices, purchaseInvoices, saleOrders] = await Promise.all([
     supabase.from("erp_stock_lots").select("id,lote,product_code,product_name,cantidad,ubicacion,creado_el")
       .or(`lote.ilike.${like},product_code.ilike.${like},product_name.ilike.${like}`)
       .order("creado_el", { ascending: false }).limit(30),
@@ -522,6 +552,9 @@ export async function adminErpSearch(query: string): Promise<Res & { result?: Er
     supabase.from("erp_invoices_purchase").select("numero,partner,fecha,total,estado")
       .or(`numero.ilike.${like},partner.ilike.${like}`)
       .order("fecha", { ascending: false }).limit(30),
+    supabase.from("erp_sale_orders").select("referencia,cliente,fecha_pedido,total,estado,nota")
+      .or(`referencia.ilike.${like},cliente.ilike.${like},referencia_cliente.ilike.${like}`)
+      .order("fecha_pedido", { ascending: false }).limit(30),
   ]);
 
   return {
@@ -531,6 +564,7 @@ export async function adminErpSearch(query: string): Promise<Res & { result?: Er
       orders: (orders.data ?? []) as ErpSearchResult["orders"],
       salesInvoices: (salesInvoices.data ?? []) as ErpSearchResult["salesInvoices"],
       purchaseInvoices: (purchaseInvoices.data ?? []) as ErpSearchResult["purchaseInvoices"],
+      saleOrders: (saleOrders.data ?? []) as ErpSearchResult["saleOrders"],
     },
   };
 }
