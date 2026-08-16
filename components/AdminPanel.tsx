@@ -5,13 +5,13 @@ import type { Tariff, Contract, ContractTarget, Commission, Invoice, Payment } f
 import type { Prod, Order, Req, Client, TariffPrice, ClientOrder, Warehouse, InventoryLevel } from "./admin/types";
 import { fdate, ORDER_STATES, num } from "./admin/types";
 import Resumen from "./admin/Resumen";
-import Tarifas from "./admin/Tarifas";
 import Facturas from "./admin/Facturas";
-import Clientes from "./admin/Clientes";
 import Inventario from "./admin/Inventario";
 import Trazabilidad from "./admin/Trazabilidad";
 import Directorio from "./admin/Directorio";
-import { adminUpdateProductFull, adminUpdateOrderStatus, adminUpdateRequest, adminShipOrder } from "@/app/admin/actions";
+import HistorialPedidos from "./admin/HistorialPedidos";
+import ClientesWeb from "./admin/ClientesWeb";
+import { adminUpdateProductFull, adminUpdateOrderStatus, adminShipOrder } from "@/app/admin/actions";
 
 type Props = {
   products: Prod[]; orders: Order[]; requests: Req[]; clients: Client[];
@@ -21,10 +21,9 @@ type Props = {
   warehouses: Warehouse[]; inventoryLevels: InventoryLevel[];
 };
 
-type Tab = "resumen" | "productos" | "tarifas" | "pedidos" | "facturas" | "clientes" | "solicitudes" | "inventario" | "trazabilidad" | "directorio";
+type Tab = "resumen" | "productos" | "pedidos" | "facturas" | "clientes" | "inventario" | "trazabilidad" | "directorio";
 
 export default function AdminPanel(p: Props) {
-  const pendingReq = p.requests.filter((r) => r.status === "pending").length;
   const [tab, setTab] = useState<Tab>("resumen");
   const openInvoices = p.invoices.filter((i) => i.status === "pending" || i.status === "partial").length;
 
@@ -35,12 +34,10 @@ export default function AdminPanel(p: Props) {
         <button className={tab === "productos" ? "on" : ""} onClick={() => setTab("productos")}>Productos <span>{p.products.length}</span></button>
         <button className={tab === "inventario" ? "on" : ""} onClick={() => setTab("inventario")}>Inventario</button>
         <button className={tab === "trazabilidad" ? "on" : ""} onClick={() => setTab("trazabilidad")}>Trazabilidad</button>
-        <button className={tab === "tarifas" ? "on" : ""} onClick={() => setTab("tarifas")}>Tarifas <span>{p.tariffs.length}</span></button>
         <button className={tab === "pedidos" ? "on" : ""} onClick={() => setTab("pedidos")}>Pedidos <span>{p.orders.length}</span></button>
         <button className={tab === "facturas" ? "on" : ""} onClick={() => setTab("facturas")}>Facturas {openInvoices > 0 ? <span>{openInvoices}</span> : null}</button>
-        <button className={tab === "clientes" ? "on" : ""} onClick={() => setTab("clientes")}>Clientes <span>{p.clients.length}</span></button>
+        <button className={tab === "clientes" ? "on" : ""} onClick={() => setTab("clientes")}>Clientes</button>
         <button className={tab === "directorio" ? "on" : ""} onClick={() => setTab("directorio")}>Directorio</button>
-        <button className={tab === "solicitudes" ? "on" : ""} onClick={() => setTab("solicitudes")}>Solicitudes {pendingReq > 0 && <span className="alert">{pendingReq}</span>}</button>
       </div>
 
       {tab === "resumen" && (
@@ -53,16 +50,9 @@ export default function AdminPanel(p: Props) {
       {tab === "productos" && <Productos products={p.products} />}
       {tab === "inventario" && <Inventario products={p.products} warehouses={p.warehouses} levels={p.inventoryLevels} />}
       {tab === "trazabilidad" && <Trazabilidad />}
-      {tab === "tarifas" && <Tarifas products={p.products} tariffs={p.tariffs} tariffPrices={p.tariffPrices} />}
-      {tab === "pedidos" && <Pedidos orders={p.orders} />}
+      {tab === "pedidos" && <PedidosSection orders={p.orders} />}
       {tab === "facturas" && <Facturas invoices={p.invoices} payments={p.payments} clients={p.clients} contracts={p.contracts} />}
-      {tab === "clientes" && (
-        <Clientes
-          clients={p.clients} tariffs={p.tariffs} contracts={p.contracts}
-          targets={p.targets} commissions={p.commissions} clientOrders={p.clientOrders}
-        />
-      )}
-      {tab === "solicitudes" && <Solicitudes requests={p.requests} />}
+      {tab === "clientes" && <ClientesWeb />}
       {tab === "directorio" && <Directorio />}
     </div>
   );
@@ -180,8 +170,22 @@ function ProductoDetalle({ product, onSaved, onCancel }: { product: Prod; onSave
   );
 }
 
-/* ---------------- Pedidos ---------------- */
-function Pedidos({ orders }: { orders: Order[] }) {
+/* ---------------- Pedidos (activos + historial importado) ---------------- */
+function PedidosSection({ orders }: { orders: Order[] }) {
+  const [sub, setSub] = useState<"activos" | "historial">("activos");
+  return (
+    <div>
+      <div className="adm-tabs" style={{ marginBottom: 16 }}>
+        <button className={sub === "activos" ? "on" : ""} onClick={() => setSub("activos")}>Pedidos <span>{orders.length}</span></button>
+        <button className={sub === "historial" ? "on" : ""} onClick={() => setSub("historial")}>Historial de Pedidos</button>
+      </div>
+      {sub === "activos" && <PedidosActivos orders={orders} />}
+      {sub === "historial" && <HistorialPedidos />}
+    </div>
+  );
+}
+
+function PedidosActivos({ orders }: { orders: Order[] }) {
   const [rows, setRows] = useState(() => orders.map((o) => ({ ...o, _busy: false })));
   const [open, setOpen] = useState<string | null>(null);
   function patch(id: string, data: Partial<Order>) {
@@ -314,38 +318,3 @@ function Dispatch({ o, busy, onStatus, onShipped }: { o: Order; busy: boolean; o
 }
 
 
-/* ---------------- Solicitudes ---------------- */
-function Solicitudes({ requests }: { requests: Req[] }) {
-  const [rows, setRows] = useState(() => requests.map((r) => ({ ...r, _busy: false })));
-  async function setStatus(id: string, status: string) {
-    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, _busy: true } : r)));
-    const res = await adminUpdateRequest({ id, status });
-    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, status: res.ok ? status : r.status, _busy: false } : r)));
-  }
-  if (rows.length === 0) return <p className="adm-empty">No hay solicitudes de cuenta.</p>;
-  const badge = (s: string) => s === "approved" ? "ok" : s === "rejected" ? "no" : "pend";
-  const label = (s: string) => s === "approved" ? "Aprobada" : s === "rejected" ? "Rechazada" : "Pendiente";
-  return (
-    <div className="adm-tablewrap">
-      <table className="adm-table">
-        <thead><tr><th>Fecha</th><th>Contacto / Empresa</th><th>CIF</th><th>Tipo</th><th>Contacto</th><th>Estado</th><th></th></tr></thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.id}>
-              <td>{fdate(r.created_at)}</td>
-              <td><b>{r.contact_name || "—"}</b><span className="sub">{r.company}</span></td>
-              <td className="mono">{r.cif || "—"}</td>
-              <td>{r.business_type || "—"}</td>
-              <td><a href={`mailto:${r.email}`} className="adm-link">{r.email}</a><span className="sub">{r.phone}</span></td>
-              <td><span className={`adm-chip ${badge(r.status)}`}>{label(r.status)}</span></td>
-              <td className="c">
-                {r.status !== "approved" && <button className="adm-save" disabled={r._busy} onClick={() => setStatus(r.id, "approved")}>Aprobar</button>}
-                {r.status !== "rejected" && <button className="adm-link danger" disabled={r._busy} onClick={() => setStatus(r.id, "rejected")}>Rechazar</button>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}

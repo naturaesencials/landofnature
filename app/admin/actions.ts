@@ -465,6 +465,53 @@ export async function adminSaleOrderDetail(referencia: string): Promise<Res & { 
   return { ok: true, detail: { order: (o.data ?? null) as SaleOrderDetail["order"], lines: (l.data ?? []) as SaleOrderDetail["lines"] } };
 }
 
+export type SaleOrderListRow = { referencia: string; cliente: string | null; fecha_pedido: string | null; estado: string | null; total: number | null; nota: string | null };
+export async function adminSaleOrdersList(input: { q?: string; limit?: number }): Promise<Res & { rows?: SaleOrderListRow[] }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  let query = supabase.from("erp_sale_orders").select("referencia,cliente,fecha_pedido,estado,total,nota").order("fecha_pedido", { ascending: false }).limit(input.limit ?? 100);
+  if (input.q && input.q.trim().length >= 2) {
+    const like = `%${input.q.trim()}%`;
+    query = query.or(`referencia.ilike.${like},cliente.ilike.${like},referencia_cliente.ilike.${like},nota.ilike.${like}`);
+  }
+  const { data, error } = await query;
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, rows: (data ?? []) as SaleOrderListRow[] };
+}
+
+/** Clientes reales de la web nueva (no del ERP): agrupa los pedidos de la tabla `orders` por email,
+ *  distinguiendo cuentas registradas (client_id) de compras como invitado. */
+export type WebCustomer = {
+  email: string; name: string | null; phone: string | null; city: string | null;
+  registered: boolean; order_count: number; total_spent: number; first_order: string; last_order: string;
+};
+export async function adminWebCustomers(): Promise<Res & { rows?: WebCustomer[] }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const { data, error } = await supabase.from("orders").select("email,name,phone,city,client_id,total,created_at").order("created_at", { ascending: true });
+  if (error) return { ok: false, error: error.message };
+  const map = new Map<string, WebCustomer>();
+  for (const o of data ?? []) {
+    if (!o.email) continue;
+    const key = o.email.toLowerCase();
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, {
+        email: o.email, name: o.name, phone: o.phone, city: o.city,
+        registered: !!o.client_id, order_count: 1, total_spent: Number(o.total) || 0,
+        first_order: o.created_at, last_order: o.created_at,
+      });
+    } else {
+      existing.order_count += 1;
+      existing.total_spent += Number(o.total) || 0;
+      existing.last_order = o.created_at;
+      if (o.client_id) existing.registered = true;
+      if (!existing.name && o.name) existing.name = o.name;
+    }
+  }
+  return { ok: true, rows: Array.from(map.values()).sort((a, b) => b.last_order.localeCompare(a.last_order)) };
+}
+
 /* ---------------- Directorio de clientes y proveedores ---------------- */
 
 export type Partner = {
