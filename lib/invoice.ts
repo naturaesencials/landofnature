@@ -257,8 +257,16 @@ export async function createCreditNote(input: CreditNoteInput): Promise<{ ok: bo
     };
     rectifiesNumeroExterno = input.rectifies_numero_externo;
     originalNumero = input.rectifies_numero_externo;
+  } else if (input.customer_name) {
+    // Abono manual: sin factura de referencia (goodwill, ajuste, factura externa no localizable, etc.)
+    base = {
+      order_id: null, partner_id: input.partner_id ?? null, customer_name: input.customer_name,
+      customer_cif: input.customer_cif ?? null, customer_email: input.customer_email ?? null, customer_address: input.customer_address ?? null,
+      customer_city: input.customer_city ?? null, customer_postal_code: input.customer_postal_code ?? null, customer_province: input.customer_province ?? null,
+    };
+    originalNumero = "";
   } else {
-    return { ok: false, error: "Falta indicar qué factura se rectifica." };
+    return { ok: false, error: "Falta indicar qué factura se rectifica, o los datos del cliente para un abono manual." };
   }
 
   const now = new Date();
@@ -301,7 +309,7 @@ export async function createCreditNote(input: CreditNoteInput): Promise<{ ok: bo
       lines: input.lines.map((l) => ({ description: l.description, quantity: l.quantity, unit_price: l.unit_price, vat_rate: l.vat_rate, subtotal: -Math.abs(Math.round(l.quantity * l.unit_price * 100) / 100) })),
       subtotal, vat_amount: vatAmount, total,
       payment_method: "manual", order_no: null,
-      rectifies_numero: originalNumero, rectification_reason: input.reason,
+      rectifies_numero: originalNumero || null, rectification_reason: input.reason,
     });
   } catch (e) { console.error("generateInvoicePdf error", e); }
 
@@ -312,7 +320,7 @@ export async function createCreditNote(input: CreditNoteInput): Promise<{ ok: bo
     if (input.send_email && invoice.customer_email) {
       const sent = await sendInvoiceEmail(supabase, {
         to: invoice.customer_email, numero, pdfBuffer, subjectSuffix: " (rectificativa)",
-        bodyHtml: `<p>Hola ${invoice.customer_name},</p><p>Adjuntamos la factura rectificativa ${numero}, que rectifica la factura ${originalNumero}.</p><p>Motivo: ${input.reason}</p><p>Land of Nature.</p>`,
+        bodyHtml: `<p>Hola ${invoice.customer_name},</p><p>Adjuntamos la factura rectificativa ${numero}${originalNumero ? `, que rectifica la factura ${originalNumero}` : ""}.</p><p>Motivo: ${input.reason}</p><p>Land of Nature.</p>`,
       });
       if (sent) await supabase.from("native_invoices").update({ email_sent_at: new Date().toISOString() }).eq("id", invoice.id);
     }

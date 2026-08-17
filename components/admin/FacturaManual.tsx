@@ -116,6 +116,26 @@ function NuevaFactura() {
 }
 
 function Rectificativa() {
+  const [mode, setMode] = useState<"buscar" | "manual" | null>(null);
+
+  return (
+    <div>
+      {!mode && (
+        <div>
+          <p className="lead" style={{ marginTop: 0 }}>¿Cómo quieres generar el abono?</p>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button className="btn" onClick={() => setMode("buscar")}>Buscar factura original</button>
+            <button className="btn" onClick={() => setMode("manual")}>Abono manual (sin factura de referencia)</button>
+          </div>
+        </div>
+      )}
+      {mode === "buscar" && <RectificativaBuscar onBack={() => setMode(null)} />}
+      {mode === "manual" && <RectificativaManual onBack={() => setMode(null)} />}
+    </div>
+  );
+}
+
+function RectificativaBuscar({ onBack }: { onBack: () => void }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<InvoiceForRectify[]>([]);
   const [selected, setSelected] = useState<InvoiceForRectify | null>(null);
@@ -181,6 +201,7 @@ function Rectificativa() {
 
   return (
     <div>
+      <button className="btn-sm" onClick={onBack} style={{ marginBottom: 12 }}>← Cambiar modo</button>
       <p className="lead" style={{ marginTop: 0 }}>
         Busca la factura original — tanto nuevas de la web como del histórico de Odoo — y genera su abono
         con numeración legal continuada (<code>REINV/AAAA/NNNNN</code>).
@@ -251,6 +272,72 @@ function Rectificativa() {
           <button className="btn" style={{ marginTop: 14 }} onClick={submit} disabled={saving || loadingLines}>{saving ? "Creando…" : "Crear rectificativa"}</button>
         </div>
       )}
+    </div>
+  );
+}
+
+function RectificativaManual({ onBack }: { onBack: () => void }) {
+  const [name, setName] = useState("");
+  const [cif, setCif] = useState("");
+  const [email, setEmail] = useState("");
+  const [address, setAddress] = useState("");
+  const [city, setCity] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+  const [province, setProvince] = useState("");
+  const [reason, setReason] = useState("");
+  const [sendEmail, setSendEmail] = useState(true);
+  const [lines, setLines] = useState<Line[]>([emptyLine()]);
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    if (!name.trim()) { setError("Falta el nombre del cliente."); return; }
+    if (!reason.trim()) { setError("Indica el motivo del abono."); return; }
+    if (!lines.length || lines.some((l) => !l.description.trim() || l.quantity <= 0)) { setError("Revisa las líneas: cada una necesita descripción y cantidad > 0."); return; }
+    setSaving(true); setError(null); setResult(null);
+    const res = await adminCreateCreditNote({
+      customer_name: name.trim(), customer_cif: cif.trim() || null, customer_email: email.trim() || null,
+      customer_address: address.trim() || null, customer_city: city.trim() || null,
+      customer_postal_code: postalCode.trim() || null, customer_province: province.trim() || null,
+      reason: reason.trim(), lines, send_email: sendEmail && !!email.trim(),
+    });
+    setSaving(false);
+    if (!res.ok) { setError(res.error || "No se pudo crear el abono."); return; }
+    setResult(res.numero || null);
+    setName(""); setCif(""); setEmail(""); setAddress(""); setCity(""); setPostalCode(""); setProvince(""); setReason("");
+    setLines([emptyLine()]);
+  }
+
+  return (
+    <div>
+      <button className="btn-sm" onClick={onBack} style={{ marginBottom: 12 }}>← Cambiar modo</button>
+      <p className="lead" style={{ marginTop: 0 }}>
+        Abono sin factura de referencia (goodwill, ajuste, o una factura externa que no está localizable) —
+        se numera igual con la secuencia legal (<code>REINV/AAAA/NNNNN</code>), el PDF no menciona ninguna factura rectificada.
+      </p>
+      {result && <p style={{ background: "var(--cream)", padding: "8px 12px", borderRadius: 6 }}>✓ Abono <b>{result}</b> creado correctamente{sendEmail ? " y enviado por email" : ""}.</p>}
+      {error && <p style={{ color: "#b00020" }}>{error}</p>}
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16, maxWidth: 640 }}>
+        <label>Nombre / razón social *<input value={name} onChange={(e) => setName(e.target.value)} /></label>
+        <label>NIF/CIF (opcional)<input value={cif} onChange={(e) => setCif(e.target.value)} /></label>
+        <label>Email<input value={email} onChange={(e) => setEmail(e.target.value)} /></label>
+        <label>Ciudad<input value={city} onChange={(e) => setCity(e.target.value)} /></label>
+        <label>Provincia<input value={province} onChange={(e) => setProvince(e.target.value)} /></label>
+        <label>Código postal<input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} /></label>
+        <label style={{ gridColumn: "1 / -1" }}>Dirección<input value={address} onChange={(e) => setAddress(e.target.value)} /></label>
+        <label style={{ gridColumn: "1 / -1" }}>Motivo del abono *<input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej: gesto comercial, ajuste de saldo..." /></label>
+      </div>
+
+      <LinesEditor lines={lines} setLines={setLines} />
+
+      <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 12 }}>
+        <input type="checkbox" checked={sendEmail} onChange={(e) => setSendEmail(e.target.checked)} />
+        Enviar por email al cliente (si hay email)
+      </label>
+
+      <button className="btn" style={{ marginTop: 14 }} onClick={submit} disabled={saving}>{saving ? "Creando…" : "Crear abono"}</button>
     </div>
   );
 }
