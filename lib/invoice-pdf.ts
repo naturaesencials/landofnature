@@ -4,10 +4,11 @@ import path from "path";
 
 export type InvoicePdfLine = {
   description: string;
-  quantity: number;
-  unit_price: number;
-  vat_rate: number;
-  subtotal: number;
+  quantity?: number;
+  unit_price?: number;
+  vat_rate?: number;
+  subtotal?: number;
+  is_note?: boolean;
 };
 
 export type InvoicePdfData = {
@@ -124,12 +125,21 @@ export async function generateInvoicePdf(data: InvoicePdfData): Promise<Buffer> 
 
     doc.font("Helvetica").fontSize(9).fillColor(TEXT);
     for (const line of data.lines) {
+      if (line.is_note) {
+        const noteWidth = pageWidth - 20;
+        doc.font("Helvetica-Oblique").fontSize(8.5).fillColor(TEXT);
+        const rowHeight = Math.max(12, doc.heightOfString(line.description, { width: noteWidth }));
+        doc.text(line.description, cols.desc + 10, y, { width: noteWidth });
+        doc.font("Helvetica").fontSize(9);
+        y += rowHeight + 6;
+        continue;
+      }
       const rowHeight = Math.max(14, doc.heightOfString(line.description, { width: 240 }));
       doc.text(line.description, cols.desc, y, { width: 240 });
       doc.text(String(line.quantity), cols.qty, y, { width: 40, align: "right" });
-      doc.text(euro(line.unit_price), cols.price, y, { width: 60, align: "right" });
+      doc.text(euro(line.unit_price ?? 0), cols.price, y, { width: 60, align: "right" });
       doc.text(`${line.vat_rate}%`, cols.vat, y, { width: 30, align: "right" });
-      doc.text(euro(line.subtotal), cols.amount, y, { width: pageWidth + 50 - cols.amount, align: "right" });
+      doc.text(euro(line.subtotal ?? 0), cols.amount, y, { width: pageWidth + 50 - cols.amount, align: "right" });
       y += rowHeight + 6;
     }
 

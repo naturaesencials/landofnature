@@ -7,8 +7,9 @@ import {
   type InvoiceForRectify,
 } from "@/app/admin/actions";
 
-type Line = { description: string; quantity: number; unit_price: number; vat_rate: number };
+type Line = { description: string; quantity: number; unit_price: number; vat_rate: number; is_note?: boolean };
 const emptyLine = (): Line => ({ description: "", quantity: 1, unit_price: 0, vat_rate: 21 });
+const emptyNote = (): Line => ({ description: "", quantity: 0, unit_price: 0, vat_rate: 0, is_note: true });
 
 export default function FacturaManual() {
   const [mode, setMode] = useState<"nueva" | "rectificativa">("nueva");
@@ -27,26 +28,42 @@ function LinesEditor({ lines, setLines }: { lines: Line[]; setLines: (l: Line[])
   function update(i: number, patch: Partial<Line>) {
     setLines(lines.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
   }
-  const subtotal = lines.reduce((s, l) => s + l.quantity * l.unit_price, 0);
-  const vat = lines.reduce((s, l) => s + l.quantity * l.unit_price * (l.vat_rate / 100), 0);
+  const productLines = lines.filter((l) => !l.is_note);
+  const subtotal = productLines.reduce((s, l) => s + l.quantity * l.unit_price, 0);
+  const vat = productLines.reduce((s, l) => s + l.quantity * l.unit_price * (l.vat_rate / 100), 0);
   return (
     <div>
       <table className="adm-table">
         <thead><tr><th>Descripción</th><th>Cant.</th><th>Precio ud.</th><th>IVA %</th><th>Importe</th><th /></tr></thead>
         <tbody>
-          {lines.map((l, i) => (
+          {lines.map((l, i) => l.is_note ? (
+            <tr key={i}>
+              <td colSpan={4}>
+                <input
+                  value={l.description} onChange={(e) => update(i, { description: e.target.value })}
+                  placeholder="Nota (texto que aparece bajo la línea anterior, no se contabiliza)"
+                  style={{ width: "100%", fontStyle: "italic", color: "var(--muted)" }}
+                />
+              </td>
+              <td />
+              <td><button className="btn-sm" onClick={() => setLines(lines.filter((_, idx) => idx !== i))}>✕</button></td>
+            </tr>
+          ) : (
             <tr key={i}>
               <td><input value={l.description} onChange={(e) => update(i, { description: e.target.value })} placeholder="Producto o concepto" style={{ width: "100%" }} /></td>
               <td><input type="number" step="0.01" value={l.quantity} onChange={(e) => update(i, { quantity: Number(e.target.value) })} style={{ width: 70 }} /></td>
               <td><input type="number" step="0.01" value={l.unit_price} onChange={(e) => update(i, { unit_price: Number(e.target.value) })} style={{ width: 90 }} /></td>
               <td><input type="number" step="1" value={l.vat_rate} onChange={(e) => update(i, { vat_rate: Number(e.target.value) })} style={{ width: 60 }} /></td>
               <td>{euro(l.quantity * l.unit_price)}</td>
-              <td><button className="btn-sm" onClick={() => setLines(lines.filter((_, idx) => idx !== i))} disabled={lines.length <= 1}>✕</button></td>
+              <td><button className="btn-sm" onClick={() => setLines(lines.filter((_, idx) => idx !== i))} disabled={productLines.length <= 1}>✕</button></td>
             </tr>
           ))}
         </tbody>
       </table>
-      <button className="btn-sm" style={{ marginTop: 8 }} onClick={() => setLines([...lines, emptyLine()])}>+ Añadir línea</button>
+      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+        <button className="btn-sm" onClick={() => setLines([...lines, emptyLine()])}>+ Añadir línea</button>
+        <button className="btn-sm" onClick={() => setLines([...lines, emptyNote()])}>+ Añadir nota</button>
+      </div>
       <div style={{ marginTop: 10, fontSize: 13 }}>
         Base: <b>{euro(subtotal)}</b> · IVA: <b>{euro(vat)}</b> · Total: <b>{euro(subtotal + vat)}</b>
       </div>
@@ -71,7 +88,7 @@ function NuevaFactura() {
 
   async function submit() {
     if (!name.trim()) { setError("Falta el nombre del cliente."); return; }
-    if (!lines.length || lines.some((l) => !l.description.trim() || l.quantity <= 0)) { setError("Revisa las líneas: cada una necesita descripción y cantidad > 0."); return; }
+    if (!lines.length || lines.some((l) => !l.description.trim() || (!l.is_note && l.quantity <= 0))) { setError("Revisa las líneas: cada una necesita descripción y cantidad > 0."); return; }
     setSaving(true); setError(null); setResult(null);
     const res = await adminCreateManualInvoice({
       customer_name: name.trim(), customer_cif: cif.trim() || null, customer_email: email.trim() || null,
@@ -182,7 +199,7 @@ function RectificativaBuscar({ onBack }: { onBack: () => void }) {
   async function submit() {
     if (!selected) return;
     if (!reason.trim()) { setError("Indica el motivo de la rectificación."); return; }
-    if (!lines.length || lines.some((l) => !l.description.trim() || l.quantity <= 0)) { setError("Revisa las líneas a abonar."); return; }
+    if (!lines.length || lines.some((l) => !l.description.trim() || (!l.is_note && l.quantity <= 0))) { setError("Revisa las líneas a abonar."); return; }
     setSaving(true); setError(null); setResult(null);
     const res = await adminCreateCreditNote({
       rectifies_invoice_id: selected.source === "nueva" ? selected.id : null,
@@ -294,7 +311,7 @@ function RectificativaManual({ onBack }: { onBack: () => void }) {
   async function submit() {
     if (!name.trim()) { setError("Falta el nombre del cliente."); return; }
     if (!reason.trim()) { setError("Indica el motivo del abono."); return; }
-    if (!lines.length || lines.some((l) => !l.description.trim() || l.quantity <= 0)) { setError("Revisa las líneas: cada una necesita descripción y cantidad > 0."); return; }
+    if (!lines.length || lines.some((l) => !l.description.trim() || (!l.is_note && l.quantity <= 0))) { setError("Revisa las líneas: cada una necesita descripción y cantidad > 0."); return; }
     setSaving(true); setError(null); setResult(null);
     const res = await adminCreateCreditNote({
       customer_name: name.trim(), customer_cif: cif.trim() || null, customer_email: email.trim() || null,

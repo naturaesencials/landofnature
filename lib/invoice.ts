@@ -36,7 +36,7 @@ export async function generateInvoiceForOrder(orderId: string): Promise<{ ok: bo
       quantity: it.qty, unit_price: it.unit_price, vat_rate: VAT_RATE, subtotal: lineSubtotal,
     };
   });
-  const subtotal = lines.reduce((s, l) => s + l.subtotal, 0);
+  const subtotal = lines.reduce((s, l) => s + (l.subtotal ?? 0), 0);
   const vatAmount = Math.round(subtotal * (VAT_RATE / 100) * 100) / 100;
   const total = Math.round((subtotal + vatAmount) * 100) / 100;
 
@@ -117,7 +117,7 @@ export async function generateInvoiceForOrder(orderId: string): Promise<{ ok: bo
 
 /* ---------------- Facturación manual y rectificativas ---------------- */
 
-export type ManualInvoiceLine = { description: string; quantity: number; unit_price: number; vat_rate: number };
+export type ManualInvoiceLine = { description: string; quantity?: number; unit_price?: number; vat_rate?: number; is_note?: boolean };
 export type ManualInvoiceInput = {
   customer_name: string; customer_cif?: string | null; customer_email?: string | null;
   customer_address?: string | null; customer_city?: string | null; customer_postal_code?: string | null; customer_province?: string | null;
@@ -146,6 +146,32 @@ async function sendInvoiceEmail(supabase: ReturnType<typeof createServiceClient>
   return r.ok;
 }
 
+/** Separa líneas de producto (cuentan para el total) de líneas de nota (solo texto, no se contabilizan). */
+function computeTotals(lines: ManualInvoiceLine[]) {
+  const productLines = lines.filter((l) => !l.is_note);
+  const subtotal = productLines.reduce((s, l) => s + (l.quantity ?? 0) * (l.unit_price ?? 0), 0);
+  const vatAmount = productLines.reduce((s, l) => s + (l.quantity ?? 0) * (l.unit_price ?? 0) * ((l.vat_rate ?? 0) / 100), 0);
+  return { subtotal: Math.round(subtotal * 100) / 100, vatAmount: Math.round(vatAmount * 100) / 100 };
+}
+
+function toDbLines(invoiceId: string, lines: ManualInvoiceLine[], sign = 1) {
+  return lines.map((l) => l.is_note
+    ? { invoice_id: invoiceId, description: l.description, is_note: true }
+    : {
+        invoice_id: invoiceId, description: l.description, quantity: l.quantity,
+        unit_price: l.unit_price, vat_rate: l.vat_rate,
+        subtotal: sign * Math.abs(Math.round((l.quantity ?? 0) * (l.unit_price ?? 0) * 100) / 100),
+      }
+  );
+}
+
+function toPdfLines(lines: ManualInvoiceLine[], sign = 1): InvoicePdfLine[] {
+  return lines.map((l) => l.is_note
+    ? { description: l.description, is_note: true }
+    : { description: l.description, quantity: l.quantity, unit_price: l.unit_price, vat_rate: l.vat_rate, subtotal: sign * Math.abs(Math.round((l.quantity ?? 0) * (l.unit_price ?? 0) * 100) / 100) }
+  );
+}
+
 /** Crea una factura manual (no ligada a un pedido de la web): numeración legal atómica del mes en curso,
  *  PDF, subida a storage y envío opcional por email. */
 export async function createManualInvoice(input: ManualInvoiceInput): Promise<{ ok: boolean; numero?: string; id?: string; error?: string }> {
@@ -161,8 +187,7 @@ export async function createManualInvoice(input: ManualInvoiceInput): Promise<{ 
   if (seqErr) return { ok: false, error: seqErr.message };
   const numero = `INV/${year}/${String(month).padStart(2, "0")}/${String(seq).padStart(4, "0")}`;
 
-  const subtotal = input.lines.reduce((s, l) => s + l.quantity * l.unit_price, 0);
-  const vatAmount = input.lines.reduce((s, l) => s + l.quantity * l.unit_price * (l.vat_rate / 100), 0);
+  const { subtotal, vatAmount } = computeTotals(input.lines);
   const total = Math.round((subtotal + vatAmount) * 100) / 100;
 
   const { data: invoice, error: invErr } = await supabase.from("native_invoices").insert({
@@ -176,12 +201,7 @@ export async function createManualInvoice(input: ManualInvoiceInput): Promise<{ 
   }).select().single();
   if (invErr || !invoice) return { ok: false, error: invErr?.message || "No se pudo crear la factura." };
 
-  await supabase.from("native_invoice_lines").insert(
-    input.lines.map((l) => ({
-      invoice_id: invoice.id, description: l.description, quantity: l.quantity,
-      unit_price: l.unit_price, vat_rate: l.vat_rate, subtotal: Math.round(l.quantity * l.unit_price * 100) / 100,
-    }))
-  );
+  await supabase.from("native_invoice_lines").insert(toDbLines(invoice.id, input.lines));
 
   let pdfBuffer: Buffer | null = null;
   try {
@@ -190,7 +210,7 @@ export async function createManualInvoice(input: ManualInvoiceInput): Promise<{ 
       customer_name: invoice.customer_name, customer_cif: invoice.customer_cif, customer_email: invoice.customer_email,
       customer_address: invoice.customer_address, customer_city: invoice.customer_city,
       customer_postal_code: invoice.customer_postal_code, customer_province: invoice.customer_province,
-      lines: input.lines.map((l) => ({ description: l.description, quantity: l.quantity, unit_price: l.unit_price, vat_rate: l.vat_rate, subtotal: Math.round(l.quantity * l.unit_price * 100) / 100 })),
+      lines: toPdfLines(input.lines),
       subtotal: Math.round(subtotal * 100) / 100, vat_amount: Math.round(vatAmount * 100) / 100, total,
       payment_method: "manual", order_no: null,
     });
@@ -276,8 +296,9 @@ export async function createCreditNote(input: CreditNoteInput): Promise<{ ok: bo
   if (seqErr) return { ok: false, error: seqErr.message };
   const numero = `REINV/${year}/${String(seq).padStart(5, "0")}`;
 
-  const subtotal = -Math.abs(input.lines.reduce((s, l) => s + l.quantity * l.unit_price, 0));
-  const vatAmount = -Math.abs(input.lines.reduce((s, l) => s + l.quantity * l.unit_price * (l.vat_rate / 100), 0));
+  const totals = computeTotals(input.lines);
+  const subtotal = -totals.subtotal;
+  const vatAmount = -totals.vatAmount;
   const total = Math.round((subtotal + vatAmount) * 100) / 100;
 
   const { data: invoice, error: invErr } = await supabase.from("native_invoices").insert({
@@ -292,12 +313,7 @@ export async function createCreditNote(input: CreditNoteInput): Promise<{ ok: bo
   }).select().single();
   if (invErr || !invoice) return { ok: false, error: invErr?.message || "No se pudo crear la rectificativa." };
 
-  await supabase.from("native_invoice_lines").insert(
-    input.lines.map((l) => ({
-      invoice_id: invoice.id, description: l.description, quantity: l.quantity,
-      unit_price: l.unit_price, vat_rate: l.vat_rate, subtotal: -Math.abs(Math.round(l.quantity * l.unit_price * 100) / 100),
-    }))
-  );
+  await supabase.from("native_invoice_lines").insert(toDbLines(invoice.id, input.lines, -1));
 
   let pdfBuffer: Buffer | null = null;
   try {
@@ -306,7 +322,7 @@ export async function createCreditNote(input: CreditNoteInput): Promise<{ ok: bo
       customer_name: invoice.customer_name, customer_cif: invoice.customer_cif, customer_email: invoice.customer_email,
       customer_address: invoice.customer_address, customer_city: invoice.customer_city,
       customer_postal_code: invoice.customer_postal_code, customer_province: invoice.customer_province,
-      lines: input.lines.map((l) => ({ description: l.description, quantity: l.quantity, unit_price: l.unit_price, vat_rate: l.vat_rate, subtotal: -Math.abs(Math.round(l.quantity * l.unit_price * 100) / 100) })),
+      lines: toPdfLines(input.lines, -1),
       subtotal, vat_amount: vatAmount, total,
       payment_method: "manual", order_no: null,
       rectifies_numero: originalNumero || null, rectification_reason: input.reason,

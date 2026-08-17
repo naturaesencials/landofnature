@@ -575,14 +575,14 @@ export async function adminInvoicesForRectify(q: string): Promise<Res & { rows?:
   return { ok: true, rows };
 }
 
-export type InvoiceLinesForRectify = { description: string; quantity: number; unit_price: number; vat_rate: number }[];
+export type InvoiceLinesForRectify = { description: string; quantity: number; unit_price: number; vat_rate: number; is_note?: boolean }[];
 export async function adminInvoiceLinesForRectify(source: "nueva" | "odoo", key: string): Promise<Res & { lines?: InvoiceLinesForRectify }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
   if (source === "nueva") {
-    const { data, error } = await supabase.from("native_invoice_lines").select("description,quantity,unit_price,vat_rate").eq("invoice_id", key);
+    const { data, error } = await supabase.from("native_invoice_lines").select("description,quantity,unit_price,vat_rate,is_note").eq("invoice_id", key);
     if (error) return { ok: false, error: error.message };
-    return { ok: true, lines: (data ?? []) as InvoiceLinesForRectify };
+    return { ok: true, lines: (data ?? []).map((l) => ({ description: l.description, quantity: l.quantity ?? 0, unit_price: l.unit_price ?? 0, vat_rate: l.vat_rate ?? 0, is_note: l.is_note })) };
   }
   const { data, error } = await supabase.from("erp_invoice_sale_lines").select("product_name,product_code,cantidad,precio_unitario").eq("invoice_numero", key);
   if (error) return { ok: false, error: error.message };
