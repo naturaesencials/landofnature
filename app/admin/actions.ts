@@ -4,6 +4,13 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from "@/lib/supabase/config";
 
 type Res = { ok: boolean; error?: string };
 
+/** Escapa un término para usarlo dentro de un filtro .or() de PostgREST. Sin esto, cualquier valor
+ *  con coma o paréntesis (habitual en razones sociales: "Nombre, S.L.") rompe la sintaxis del filtro
+ *  con un error 400 silencioso — este fue el motivo real de que ciertas búsquedas fallaran. */
+function esc(term: string): string {
+  return `"${term.replace(/"/g, '\\"')}"`;
+}
+
 async function adminClient() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -477,7 +484,7 @@ export async function adminSaleOrdersList(input: { q?: string; year?: number; li
     .order("fecha_pedido", { ascending: false }).range(offset, offset + limit - 1);
   if (input.q && input.q.trim().length >= 2) {
     const like = `%${input.q.trim()}%`;
-    query = query.or(`referencia.ilike.${like},cliente.ilike.${like},referencia_cliente.ilike.${like},nota.ilike.${like}`);
+    query = query.or(`referencia.ilike.${esc(like)},cliente.ilike.${esc(like)},referencia_cliente.ilike.${esc(like)},nota.ilike.${esc(like)}`);
   }
   if (input.year) {
     query = query.gte("fecha_pedido", `${input.year}-01-01`).lt("fecha_pedido", `${input.year + 1}-01-01`);
@@ -554,10 +561,10 @@ export async function adminInvoicesForRectify(q: string): Promise<Res & { rows?:
   const like = `%${q.trim()}%`;
   const [nativeRes, erpRes] = await Promise.all([
     supabase.from("native_invoices").select("id,numero,customer_name,total,issue_date,customer_cif")
-      .eq("kind", "invoice").or(`numero.ilike.${like},customer_name.ilike.${like}`)
+      .eq("kind", "invoice").or(`numero.ilike.${esc(like)},customer_name.ilike.${esc(like)}`)
       .order("issue_date", { ascending: false }).limit(15),
     supabase.from("erp_invoices_sale").select("numero,partner,total,fecha,cif")
-      .or(`numero.ilike.${like},partner.ilike.${like}`).order("fecha", { ascending: false }).limit(15),
+      .or(`numero.ilike.${esc(like)},partner.ilike.${esc(like)}`).order("fecha", { ascending: false }).limit(15),
   ]);
   if (nativeRes.error) return { ok: false, error: nativeRes.error.message };
   if (erpRes.error) return { ok: false, error: erpRes.error.message };
@@ -618,7 +625,7 @@ export async function adminInvoiceHistoryList(input: { q?: string; year?: number
   if (wantInvoices) {
     queries.push((async () => {
       let query = supabase.from("native_invoices").select("id,numero,issue_date,customer_name,total,status", { count: "exact" }).eq("kind", "invoice").order("issue_date", { ascending: false }).limit(limit);
-      if (like) query = query.or(`numero.ilike.${like},customer_name.ilike.${like}`);
+      if (like) query = query.or(`numero.ilike.${esc(like)},customer_name.ilike.${esc(like)}`);
       if (input.year) query = query.gte("issue_date", `${input.year}-01-01`).lt("issue_date", `${input.year + 1}-01-01`);
       const { data, error, count } = await query;
       if (error) throw error;
@@ -626,7 +633,7 @@ export async function adminInvoiceHistoryList(input: { q?: string; year?: number
     })());
     queries.push((async () => {
       let query = supabase.from("erp_invoices_sale").select("numero,fecha,partner,total,estado", { count: "exact" }).order("fecha", { ascending: false }).limit(limit);
-      if (like) query = query.or(`numero.ilike.${like},partner.ilike.${like}`);
+      if (like) query = query.or(`numero.ilike.${esc(like)},partner.ilike.${esc(like)}`);
       if (input.year) query = query.gte("fecha", `${input.year}-01-01`).lt("fecha", `${input.year + 1}-01-01`);
       const { data, error, count } = await query;
       if (error) throw error;
@@ -636,7 +643,7 @@ export async function adminInvoiceHistoryList(input: { q?: string; year?: number
   if (wantCreditNotes) {
     queries.push((async () => {
       let query = supabase.from("native_invoices").select("id,numero,issue_date,customer_name,total,status", { count: "exact" }).eq("kind", "credit_note").order("issue_date", { ascending: false }).limit(limit);
-      if (like) query = query.or(`numero.ilike.${like},customer_name.ilike.${like}`);
+      if (like) query = query.or(`numero.ilike.${esc(like)},customer_name.ilike.${esc(like)}`);
       if (input.year) query = query.gte("issue_date", `${input.year}-01-01`).lt("issue_date", `${input.year + 1}-01-01`);
       const { data, error, count } = await query;
       if (error) throw error;
@@ -644,7 +651,7 @@ export async function adminInvoiceHistoryList(input: { q?: string; year?: number
     })());
     queries.push((async () => {
       let query = supabase.from("erp_credit_notes_sale").select("numero,fecha,partner,total,estado", { count: "exact" }).order("fecha", { ascending: false }).limit(limit);
-      if (like) query = query.or(`numero.ilike.${like},partner.ilike.${like}`);
+      if (like) query = query.or(`numero.ilike.${esc(like)},partner.ilike.${esc(like)}`);
       if (input.year) query = query.gte("fecha", `${input.year}-01-01`).lt("fecha", `${input.year + 1}-01-01`);
       const { data, error, count } = await query;
       if (error) throw error;
@@ -717,7 +724,10 @@ export async function adminPartnersList(input: { kind?: "cliente" | "proveedor";
   if (!supabase) return { ok: false, error: "No autorizado." };
   let query = supabase.from("partners").select("*").order("name");
   if (input.kind) query = query.in("kind", [input.kind, "ambos"]);
-  if (input.q && input.q.trim().length >= 2) query = query.or(`name.ilike.%${input.q}%,cif.ilike.%${input.q}%,email.ilike.%${input.q}%`);
+  if (input.q && input.q.trim().length >= 2) {
+    const term = esc(`%${input.q.trim()}%`);
+    query = query.or(`name.ilike.${term},cif.ilike.${term},email.ilike.${term}`);
+  }
   const { data, error } = await query.limit(500);
   if (error) return { ok: false, error: error.message };
   return { ok: true, rows: (data ?? []) as Partner[] };
@@ -792,19 +802,19 @@ export async function adminErpSearch(query: string): Promise<Res & { result?: Er
 
   const [lots, orders, salesInvoices, purchaseInvoices, saleOrders] = await Promise.all([
     supabase.from("erp_stock_lots").select("id,lote,product_code,product_name,cantidad,ubicacion,creado_el")
-      .or(`lote.ilike.${like},product_code.ilike.${like},product_name.ilike.${like}`)
+      .or(`lote.ilike.${esc(like)},product_code.ilike.${esc(like)},product_name.ilike.${esc(like)}`)
       .order("creado_el", { ascending: false }).limit(30),
     supabase.from("erp_production_orders").select("referencia,product_code,product_name,cantidad,estado,fecha_final,lote")
-      .or(`referencia.ilike.${like},lote.ilike.${like},product_code.ilike.${like},product_name.ilike.${like}`)
+      .or(`referencia.ilike.${esc(like)},lote.ilike.${esc(like)},product_code.ilike.${esc(like)},product_name.ilike.${esc(like)}`)
       .order("fecha_final", { ascending: false }).limit(30),
     supabase.from("erp_invoices_sale").select("numero,partner,fecha,total,estado")
-      .or(`numero.ilike.${like},partner.ilike.${like}`)
+      .or(`numero.ilike.${esc(like)},partner.ilike.${esc(like)}`)
       .order("fecha", { ascending: false }).limit(30),
     supabase.from("erp_invoices_purchase").select("numero,partner,fecha,total,estado")
-      .or(`numero.ilike.${like},partner.ilike.${like}`)
+      .or(`numero.ilike.${esc(like)},partner.ilike.${esc(like)}`)
       .order("fecha", { ascending: false }).limit(30),
     supabase.from("erp_sale_orders").select("referencia,cliente,fecha_pedido,total,estado,nota")
-      .or(`referencia.ilike.${like},cliente.ilike.${like},referencia_cliente.ilike.${like}`)
+      .or(`referencia.ilike.${esc(like)},cliente.ilike.${esc(like)},referencia_cliente.ilike.${esc(like)}`)
       .order("fecha_pedido", { ascending: false }).limit(30),
   ]);
 
