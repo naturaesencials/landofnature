@@ -63,9 +63,13 @@ export default function AdminPanel(p: Props) {
 /* ---------------- Productos ---------------- */
 function Productos({ products }: { products: Prod[] }) {
   const [q, setQ] = useState("");
+  const [filter, setFilter] = useState<"activos" | "archivados" | "todos">("activos");
   const [list, setList] = useState<Prod[]>(products);
   const [open, setOpen] = useState<string | null>(null);
-  const filtered = list.filter((r) => `${r.brand} ${r.name} ${r.sku} ${r.barcode ?? ""} ${r.family} ${r.category}`.toLowerCase().includes(q.toLowerCase()));
+  const byFilter = list.filter((r) => filter === "todos" ? true : filter === "activos" ? r.active : !r.active);
+  const filtered = byFilter.filter((r) => `${r.brand} ${r.name} ${r.sku} ${r.barcode ?? ""} ${r.family} ${r.category}`.toLowerCase().includes(q.toLowerCase()));
+  const activosCount = list.filter((r) => r.active).length;
+  const archivadosCount = list.filter((r) => !r.active).length;
 
   function onSaved(updated: Prod) {
     setList((rs) => rs.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)));
@@ -73,6 +77,11 @@ function Productos({ products }: { products: Prod[] }) {
 
   return (
     <div>
+      <div className="adm-tabs" style={{ marginBottom: 14 }}>
+        <button className={filter === "activos" ? "on" : ""} onClick={() => setFilter("activos")}>Activos <span>{activosCount}</span></button>
+        <button className={filter === "archivados" ? "on" : ""} onClick={() => setFilter("archivados")}>Archivados <span>{archivadosCount}</span></button>
+        <button className={filter === "todos" ? "on" : ""} onClick={() => setFilter("todos")}>Todos <span>{list.length}</span></button>
+      </div>
       <div className="adm-bar">
         <input className="adm-search" placeholder="Buscar por nombre, marca, SKU o código de barras…" value={q} onChange={(e) => setQ(e.target.value)} />
         <span className="adm-hint">Pulsa un producto para ver y editar toda su ficha. El stock se gestiona desde la pestaña Inventario.</span>
@@ -113,7 +122,7 @@ function ProductoDetalle({ product, onSaved, onCancel }: { product: Prod; onSave
     public_price: String(product.public_price ?? 0), vat_rate: String(product.vat_rate ?? 0.21),
     units_per_box: String(product.units_per_box ?? ""), weight_kg: String(product.weight_kg ?? ""),
     low_stock_threshold: String(product.low_stock_threshold ?? 20), active: product.active,
-    image_url: product.image_url || "",
+    image_url: product.image_url || "", cost: String(product.cost ?? ""),
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -129,6 +138,7 @@ function ProductoDetalle({ product, onSaved, onCancel }: { product: Prod; onSave
       units_per_box: f.units_per_box.trim() ? parseInt(f.units_per_box) : null,
       weight_kg: f.weight_kg.trim() ? num(f.weight_kg) : null,
       low_stock_threshold: parseInt(f.low_stock_threshold) || 20, active: f.active, image_url: f.image_url || null,
+      cost: f.cost.trim() ? num(f.cost) : null,
     });
     setBusy(false);
     if (!res.ok) { setErr(res.error || "Error"); return; }
@@ -140,6 +150,7 @@ function ProductoDetalle({ product, onSaved, onCancel }: { product: Prod; onSave
       units_per_box: f.units_per_box.trim() ? parseInt(f.units_per_box) : null,
       weight_kg: f.weight_kg.trim() ? num(f.weight_kg) : null,
       low_stock_threshold: parseInt(f.low_stock_threshold) || 20, active: f.active, image_url: f.image_url || null,
+      cost: f.cost.trim() ? num(f.cost) : null,
     });
   }
 
@@ -156,6 +167,7 @@ function ProductoDetalle({ product, onSaved, onCancel }: { product: Prod; onSave
       <label>Slug (URL)<input className="adm-input mono" value={f.slug} onChange={(e) => set({ slug: e.target.value })} /></label>
       <label>Imagen (URL)<input className="adm-input" value={f.image_url} onChange={(e) => set({ image_url: e.target.value })} /></label>
       <label>Precio € (sin IVA)<input className="adm-input" inputMode="decimal" value={f.public_price} onChange={(e) => set({ public_price: e.target.value })} /></label>
+      <label>Coste € (sin IVA)<input className="adm-input" inputMode="decimal" placeholder="Pendiente de recibir" value={f.cost} onChange={(e) => set({ cost: e.target.value })} /></label>
       <label>IVA (ej. 0,21)<input className="adm-input" inputMode="decimal" value={f.vat_rate} onChange={(e) => set({ vat_rate: e.target.value })} /></label>
       <label>Peso (kg)<input className="adm-input" inputMode="decimal" value={f.weight_kg} onChange={(e) => set({ weight_kg: e.target.value })} /></label>
       <label>Umbral de stock bajo<input className="adm-input" inputMode="numeric" value={f.low_stock_threshold} onChange={(e) => set({ low_stock_threshold: e.target.value })} /></label>

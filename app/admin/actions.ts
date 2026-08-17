@@ -40,6 +40,7 @@ export async function adminUpdateProductFull(input: {
   size: string | null; sku: string; barcode: string | null; description: string | null; inci: string | null;
   inci_verified: boolean; public_price: number; vat_rate: number; units_per_box: number | null;
   weight_kg: number | null; low_stock_threshold: number; active: boolean; image_url: string | null;
+  cost: number | null;
 }): Promise<Res> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
@@ -64,6 +65,7 @@ export async function adminUpdateProductFull(input: {
     low_stock_threshold: Number.isFinite(input.low_stock_threshold) ? Math.max(0, Math.round(input.low_stock_threshold)) : 20,
     active: input.active,
     image_url: input.image_url?.trim() || null,
+    cost: input.cost != null && Number.isFinite(input.cost) ? Math.max(0, Math.round(input.cost * 100) / 100) : null,
     updated_at: new Date().toISOString(),
   }).eq("id", input.id);
   if (error) {
