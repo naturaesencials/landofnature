@@ -213,19 +213,53 @@ export async function createManualInvoice(input: ManualInvoiceInput): Promise<{ 
 }
 
 export type CreditNoteInput = {
-  rectifies_invoice_id: string; reason: string; lines: ManualInvoiceLine[]; send_email?: boolean;
+  rectifies_invoice_id?: string | null;
+  rectifies_numero_externo?: string | null;
+  customer_name?: string; customer_cif?: string | null; customer_email?: string | null;
+  customer_address?: string | null; customer_city?: string | null; customer_postal_code?: string | null; customer_province?: string | null;
+  partner_id?: string | null;
+  reason: string; lines: ManualInvoiceLine[]; send_email?: boolean;
 };
 
-/** Crea una factura rectificativa (abono) sobre una factura nativa existente. Numeración anual
- *  REINV/AAAA/NNNNN, continuando la secuencia histórica. Importes almacenados en negativo (igual
- *  que el criterio contable ya usado en el histórico de Odoo). */
+/** Crea una factura rectificativa (abono), bien sobre una factura nativa (native_invoices) o bien
+ *  sobre una factura del histórico de Odoo (identificada solo por número, sin fila nativa asociada).
+ *  Numeración anual REINV/AAAA/NNNNN, continuando la secuencia histórica. Importes en negativo. */
 export async function createCreditNote(input: CreditNoteInput): Promise<{ ok: boolean; numero?: string; id?: string; error?: string }> {
   const supabase = createServiceClient();
   if (!supabase) return { ok: false, error: "missing_service_role_key" };
   if (!input.lines.length) return { ok: false, error: "La rectificativa necesita al menos una línea." };
 
-  const { data: original, error: origErr } = await supabase.from("native_invoices").select("*").eq("id", input.rectifies_invoice_id).single();
-  if (origErr || !original) return { ok: false, error: origErr?.message || "Factura original no encontrada." };
+  let base: {
+    order_id: string | null; partner_id: string | null; customer_name: string; customer_cif: string | null;
+    customer_email: string | null; customer_address: string | null; customer_city: string | null;
+    customer_postal_code: string | null; customer_province: string | null;
+  };
+  let rectifiesInvoiceId: string | null = null;
+  let rectifiesNumeroExterno: string | null = null;
+  let originalNumero: string;
+
+  if (input.rectifies_invoice_id) {
+    const { data: original, error: origErr } = await supabase.from("native_invoices").select("*").eq("id", input.rectifies_invoice_id).single();
+    if (origErr || !original) return { ok: false, error: origErr?.message || "Factura original no encontrada." };
+    base = {
+      order_id: original.order_id, partner_id: original.partner_id, customer_name: original.customer_name,
+      customer_cif: original.customer_cif, customer_email: original.customer_email, customer_address: original.customer_address,
+      customer_city: original.customer_city, customer_postal_code: original.customer_postal_code, customer_province: original.customer_province,
+    };
+    rectifiesInvoiceId = original.id;
+    originalNumero = original.numero;
+  } else if (input.rectifies_numero_externo) {
+    if (!input.customer_name) return { ok: false, error: "Faltan los datos del cliente para rectificar una factura del histórico." };
+    base = {
+      order_id: null, partner_id: input.partner_id ?? null, customer_name: input.customer_name,
+      customer_cif: input.customer_cif ?? null, customer_email: input.customer_email ?? null, customer_address: input.customer_address ?? null,
+      customer_city: input.customer_city ?? null, customer_postal_code: input.customer_postal_code ?? null, customer_province: input.customer_province ?? null,
+    };
+    rectifiesNumeroExterno = input.rectifies_numero_externo;
+    originalNumero = input.rectifies_numero_externo;
+  } else {
+    return { ok: false, error: "Falta indicar qué factura se rectifica." };
+  }
 
   const now = new Date();
   const year = now.getFullYear();
@@ -240,10 +274,11 @@ export async function createCreditNote(input: CreditNoteInput): Promise<{ ok: bo
 
   const { data: invoice, error: invErr } = await supabase.from("native_invoices").insert({
     numero, kind: "credit_note", status: "issued", issue_date: now.toISOString(),
-    order_id: original.order_id, rectifies_invoice_id: original.id, partner_id: original.partner_id,
-    customer_name: original.customer_name, customer_cif: original.customer_cif, customer_email: original.customer_email,
-    customer_address: original.customer_address, customer_city: original.customer_city,
-    customer_postal_code: original.customer_postal_code, customer_province: original.customer_province,
+    order_id: base.order_id, rectifies_invoice_id: rectifiesInvoiceId, rectifies_numero_externo: rectifiesNumeroExterno,
+    partner_id: base.partner_id,
+    customer_name: base.customer_name, customer_cif: base.customer_cif, customer_email: base.customer_email,
+    customer_address: base.customer_address, customer_city: base.customer_city,
+    customer_postal_code: base.customer_postal_code, customer_province: base.customer_province,
     subtotal: Math.round(subtotal * 100) / 100, vat_amount: Math.round(vatAmount * 100) / 100, total,
     notes: input.reason,
   }).select().single();
@@ -266,7 +301,7 @@ export async function createCreditNote(input: CreditNoteInput): Promise<{ ok: bo
       lines: input.lines.map((l) => ({ description: l.description, quantity: l.quantity, unit_price: l.unit_price, vat_rate: l.vat_rate, subtotal: -Math.abs(Math.round(l.quantity * l.unit_price * 100) / 100) })),
       subtotal, vat_amount: vatAmount, total,
       payment_method: "manual", order_no: null,
-      rectifies_numero: original.numero, rectification_reason: input.reason,
+      rectifies_numero: originalNumero, rectification_reason: input.reason,
     });
   } catch (e) { console.error("generateInvoicePdf error", e); }
 
@@ -277,7 +312,7 @@ export async function createCreditNote(input: CreditNoteInput): Promise<{ ok: bo
     if (input.send_email && invoice.customer_email) {
       const sent = await sendInvoiceEmail(supabase, {
         to: invoice.customer_email, numero, pdfBuffer, subjectSuffix: " (rectificativa)",
-        bodyHtml: `<p>Hola ${invoice.customer_name},</p><p>Adjuntamos la factura rectificativa ${numero}, que rectifica la factura ${original.numero}.</p><p>Motivo: ${input.reason}</p><p>Land of Nature.</p>`,
+        bodyHtml: `<p>Hola ${invoice.customer_name},</p><p>Adjuntamos la factura rectificativa ${numero}, que rectifica la factura ${originalNumero}.</p><p>Motivo: ${input.reason}</p><p>Land of Nature.</p>`,
       });
       if (sent) await supabase.from("native_invoices").update({ email_sent_at: new Date().toISOString() }).eq("id", invoice.id);
     }

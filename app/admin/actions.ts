@@ -546,28 +546,48 @@ export async function adminCreateManualInvoice(input: ManualInvoiceInput): Promi
   return { ok: true, numero: res.numero };
 }
 
-export type InvoiceForRectify = { id: string; numero: string; customer_name: string; total: number; issue_date: string };
+export type InvoiceForRectify = { source: "nueva" | "odoo"; id: string | null; numero: string; customer_name: string; total: number; issue_date: string; cif?: string | null };
 export async function adminInvoicesForRectify(q: string): Promise<Res & { rows?: InvoiceForRectify[] }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
   if (q.trim().length < 2) return { ok: true, rows: [] };
   const like = `%${q.trim()}%`;
-  const { data, error } = await supabase.from("native_invoices")
-    .select("id,numero,customer_name,total,issue_date")
-    .eq("kind", "invoice")
-    .or(`numero.ilike.${like},customer_name.ilike.${like}`)
-    .order("issue_date", { ascending: false }).limit(20);
-  if (error) return { ok: false, error: error.message };
-  return { ok: true, rows: (data ?? []) as InvoiceForRectify[] };
+  const [nativeRes, erpRes] = await Promise.all([
+    supabase.from("native_invoices").select("id,numero,customer_name,total,issue_date,customer_cif")
+      .eq("kind", "invoice").or(`numero.ilike.${like},customer_name.ilike.${like}`)
+      .order("issue_date", { ascending: false }).limit(15),
+    supabase.from("erp_invoices_sale").select("numero,partner,total,fecha,cif")
+      .or(`numero.ilike.${like},partner.ilike.${like}`).order("fecha", { ascending: false }).limit(15),
+  ]);
+  if (nativeRes.error) return { ok: false, error: nativeRes.error.message };
+  if (erpRes.error) return { ok: false, error: erpRes.error.message };
+  const rows: InvoiceForRectify[] = [
+    ...(nativeRes.data ?? []).map((i) => ({ source: "nueva" as const, id: i.id, numero: i.numero, customer_name: i.customer_name, total: i.total, issue_date: i.issue_date, cif: i.customer_cif })),
+    ...(erpRes.data ?? []).map((i) => ({ source: "odoo" as const, id: null, numero: i.numero, customer_name: i.partner || "", total: i.total, issue_date: i.fecha, cif: i.cif })),
+  ].sort((a, b) => (b.issue_date || "").localeCompare(a.issue_date || ""));
+  return { ok: true, rows };
 }
 
 export type InvoiceLinesForRectify = { description: string; quantity: number; unit_price: number; vat_rate: number }[];
-export async function adminInvoiceLinesForRectify(invoiceId: string): Promise<Res & { lines?: InvoiceLinesForRectify }> {
+export async function adminInvoiceLinesForRectify(source: "nueva" | "odoo", key: string): Promise<Res & { lines?: InvoiceLinesForRectify }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
-  const { data, error } = await supabase.from("native_invoice_lines").select("description,quantity,unit_price,vat_rate").eq("invoice_id", invoiceId);
+  if (source === "nueva") {
+    const { data, error } = await supabase.from("native_invoice_lines").select("description,quantity,unit_price,vat_rate").eq("invoice_id", key);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, lines: (data ?? []) as InvoiceLinesForRectify };
+  }
+  const { data, error } = await supabase.from("erp_invoice_sale_lines").select("product_name,product_code,cantidad,precio_unitario").eq("invoice_numero", key);
   if (error) return { ok: false, error: error.message };
-  return { ok: true, lines: (data ?? []) as InvoiceLinesForRectify };
+  const lines = (data ?? []).map((l) => ({ description: l.product_name || l.product_code || "—", quantity: l.cantidad ?? 1, unit_price: l.precio_unitario ?? 0, vat_rate: 21 }));
+  return { ok: true, lines };
+}
+
+export async function adminPartnerByName(name: string): Promise<Res & { partner?: Partner | null }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const { data } = await supabase.from("partners").select("*").eq("kind", "cliente").ilike("name", name).limit(1).maybeSingle();
+  return { ok: true, partner: (data ?? null) as Partner | null };
 }
 
 export async function adminCreateCreditNote(input: CreditNoteInput): Promise<Res & { numero?: string }> {
@@ -582,51 +602,83 @@ export async function adminCreateCreditNote(input: CreditNoteInput): Promise<Res
 
 export type InvoiceHistoryRow = {
   numero: string; fecha: string | null; cliente: string | null; total: number | null;
-  estado: string | null; origen: "nueva" | "odoo"; kind?: "invoice" | "credit_note"; id?: string;
+  estado: string | null; origen: "nueva" | "odoo"; kind: "invoice" | "credit_note"; id?: string;
 };
 
-export async function adminInvoiceHistoryList(input: { q?: string; year?: number; limit?: number }): Promise<Res & { rows?: InvoiceHistoryRow[]; nativeTotal?: number; erpTotal?: number }> {
+export async function adminInvoiceHistoryList(input: { q?: string; year?: number; type?: "invoice" | "credit_note"; limit?: number }): Promise<Res & { rows?: InvoiceHistoryRow[]; nativeTotal?: number; erpTotal?: number }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
   const limit = input.year ? 1000 : (input.limit ?? 200);
   const like = input.q && input.q.trim().length >= 2 ? `%${input.q.trim()}%` : null;
+  const wantInvoices = !input.type || input.type === "invoice";
+  const wantCreditNotes = !input.type || input.type === "credit_note";
 
-  let nativeQuery = supabase.from("native_invoices").select("id,numero,issue_date,customer_name,total,status,kind", { count: "exact" }).order("issue_date", { ascending: false }).limit(limit);
-  if (like) nativeQuery = nativeQuery.or(`numero.ilike.${like},customer_name.ilike.${like}`);
-  if (input.year) nativeQuery = nativeQuery.gte("issue_date", `${input.year}-01-01`).lt("issue_date", `${input.year + 1}-01-01`);
+  const queries: Promise<{ rows: InvoiceHistoryRow[]; count: number; src: "native" | "erp" }>[] = [];
 
-  let erpQuery = supabase.from("erp_invoices_sale").select("numero,fecha,partner,total,estado", { count: "exact" }).order("fecha", { ascending: false }).limit(limit);
-  if (like) erpQuery = erpQuery.or(`numero.ilike.${like},partner.ilike.${like}`);
-  if (input.year) erpQuery = erpQuery.gte("fecha", `${input.year}-01-01`).lt("fecha", `${input.year + 1}-01-01`);
+  if (wantInvoices) {
+    queries.push((async () => {
+      let query = supabase.from("native_invoices").select("id,numero,issue_date,customer_name,total,status", { count: "exact" }).eq("kind", "invoice").order("issue_date", { ascending: false }).limit(limit);
+      if (like) query = query.or(`numero.ilike.${like},customer_name.ilike.${like}`);
+      if (input.year) query = query.gte("issue_date", `${input.year}-01-01`).lt("issue_date", `${input.year + 1}-01-01`);
+      const { data, error, count } = await query;
+      if (error) throw error;
+      return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.issue_date, cliente: i.customer_name, total: i.total, estado: i.status, origen: "nueva" as const, kind: "invoice" as const, id: i.id })), count: count ?? 0, src: "native" as const };
+    })());
+    queries.push((async () => {
+      let query = supabase.from("erp_invoices_sale").select("numero,fecha,partner,total,estado", { count: "exact" }).order("fecha", { ascending: false }).limit(limit);
+      if (like) query = query.or(`numero.ilike.${like},partner.ilike.${like}`);
+      if (input.year) query = query.gte("fecha", `${input.year}-01-01`).lt("fecha", `${input.year + 1}-01-01`);
+      const { data, error, count } = await query;
+      if (error) throw error;
+      return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.fecha, cliente: i.partner, total: i.total, estado: i.estado, origen: "odoo" as const, kind: "invoice" as const })), count: count ?? 0, src: "erp" as const };
+    })());
+  }
+  if (wantCreditNotes) {
+    queries.push((async () => {
+      let query = supabase.from("native_invoices").select("id,numero,issue_date,customer_name,total,status", { count: "exact" }).eq("kind", "credit_note").order("issue_date", { ascending: false }).limit(limit);
+      if (like) query = query.or(`numero.ilike.${like},customer_name.ilike.${like}`);
+      if (input.year) query = query.gte("issue_date", `${input.year}-01-01`).lt("issue_date", `${input.year + 1}-01-01`);
+      const { data, error, count } = await query;
+      if (error) throw error;
+      return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.issue_date, cliente: i.customer_name, total: i.total, estado: i.status, origen: "nueva" as const, kind: "credit_note" as const, id: i.id })), count: count ?? 0, src: "native" as const };
+    })());
+    queries.push((async () => {
+      let query = supabase.from("erp_credit_notes_sale").select("numero,fecha,partner,total,estado", { count: "exact" }).order("fecha", { ascending: false }).limit(limit);
+      if (like) query = query.or(`numero.ilike.${like},partner.ilike.${like}`);
+      if (input.year) query = query.gte("fecha", `${input.year}-01-01`).lt("fecha", `${input.year + 1}-01-01`);
+      const { data, error, count } = await query;
+      if (error) throw error;
+      return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.fecha, cliente: i.partner, total: i.total, estado: i.estado, origen: "odoo" as const, kind: "credit_note" as const })), count: count ?? 0, src: "erp" as const };
+    })());
+  }
 
-  const [nativeRes, erpRes] = await Promise.all([nativeQuery, erpQuery]);
-  if (nativeRes.error) return { ok: false, error: nativeRes.error.message };
-  if (erpRes.error) return { ok: false, error: erpRes.error.message };
+  let resultsArr;
+  try { resultsArr = await Promise.all(queries); } catch (e) { return { ok: false, error: (e as Error).message }; }
 
-  const rows: InvoiceHistoryRow[] = [
-    ...(nativeRes.data ?? []).map((i) => ({
-      numero: i.numero, fecha: i.issue_date, cliente: i.customer_name, total: i.total,
-      estado: i.status, origen: "nueva" as const, kind: i.kind as "invoice" | "credit_note", id: i.id,
-    })),
-    ...(erpRes.data ?? []).map((i) => ({
-      numero: i.numero, fecha: i.fecha, cliente: i.partner, total: i.total,
-      estado: i.estado, origen: "odoo" as const,
-    })),
-  ].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
+  const rows = resultsArr.flatMap((r) => r.rows).sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
+  const nativeTotal = resultsArr.filter((r) => r.src === "native").reduce((s, r) => s + r.count, 0);
+  const erpTotal = resultsArr.filter((r) => r.src === "erp").reduce((s, r) => s + r.count, 0);
 
-  return { ok: true, rows: rows.slice(0, limit), nativeTotal: nativeRes.count ?? 0, erpTotal: erpRes.count ?? 0 };
+  return { ok: true, rows: rows.slice(0, limit), nativeTotal, erpTotal };
 }
 
 export async function adminInvoiceHistoryYears(): Promise<Res & { years?: { year: number; count: number }[] }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
-  const [nativeRes, erpRes] = await Promise.all([
+  const [a, b, c] = await Promise.all([
     supabase.from("native_invoices").select("issue_date"),
     supabase.from("erp_invoices_sale").select("fecha").not("fecha", "is", null),
+    supabase.from("erp_credit_notes_sale").select("fecha").not("fecha", "is", null),
   ]);
   const counts = new Map<number, number>();
-  for (const r of nativeRes.data ?? []) { const y = new Date(r.issue_date as string).getFullYear(); counts.set(y, (counts.get(y) ?? 0) + 1); }
-  for (const r of erpRes.data ?? []) { const y = new Date(r.fecha as string).getFullYear(); counts.set(y, (counts.get(y) ?? 0) + 1); }
+  for (const src of [a, b, c]) {
+    for (const r of src.data ?? []) {
+      const dateVal = (r as { issue_date?: string; fecha?: string }).issue_date ?? (r as { fecha?: string }).fecha;
+      if (!dateVal) continue;
+      const y = new Date(dateVal).getFullYear();
+      counts.set(y, (counts.get(y) ?? 0) + 1);
+    }
+  }
   const years = Array.from(counts.entries()).map(([year, count]) => ({ year, count })).sort((a, b) => b.year - a.year);
   return { ok: true, years };
 }

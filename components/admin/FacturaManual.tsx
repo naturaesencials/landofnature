@@ -3,7 +3,7 @@ import { useState } from "react";
 import { euro } from "@/lib/types";
 import { fdate } from "./types";
 import {
-  adminCreateManualInvoice, adminInvoicesForRectify, adminInvoiceLinesForRectify, adminCreateCreditNote,
+  adminCreateManualInvoice, adminInvoicesForRectify, adminInvoiceLinesForRectify, adminCreateCreditNote, adminPartnerByName,
   type InvoiceForRectify,
 } from "@/app/admin/actions";
 
@@ -127,6 +127,15 @@ function Rectificativa() {
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Datos de cliente editables — necesarios cuando se rectifica una factura del histórico de Odoo,
+  // que no trae email/dirección; se autocompletan desde el Directorio si existe coincidencia por nombre.
+  const [custEmail, setCustEmail] = useState("");
+  const [custAddress, setCustAddress] = useState("");
+  const [custCity, setCustCity] = useState("");
+  const [custPostalCode, setCustPostalCode] = useState("");
+  const [custProvince, setCustProvince] = useState("");
+  const [partnerId, setPartnerId] = useState<string | null>(null);
+
   async function search() {
     if (q.trim().length < 2) return;
     const res = await adminInvoicesForRectify(q);
@@ -135,10 +144,19 @@ function Rectificativa() {
 
   async function select(inv: InvoiceForRectify) {
     setSelected(inv); setResults([]); setQ(""); setResult(null); setError(null);
+    setCustEmail(""); setCustAddress(""); setCustCity(""); setCustPostalCode(""); setCustProvince(""); setPartnerId(null);
     setLoadingLines(true);
-    const res = await adminInvoiceLinesForRectify(inv.id);
+    const [linesRes, partnerRes] = await Promise.all([
+      adminInvoiceLinesForRectify(inv.source, inv.id ?? inv.numero),
+      inv.source === "odoo" ? adminPartnerByName(inv.customer_name) : Promise.resolve(null),
+    ]);
     setLoadingLines(false);
-    if (res.ok) setLines((res.lines ?? []).length ? (res.lines as Line[]) : [emptyLine()]);
+    if (linesRes.ok) setLines((linesRes.lines ?? []).length ? (linesRes.lines as Line[]) : [emptyLine()]);
+    if (partnerRes?.ok && partnerRes.partner) {
+      const p = partnerRes.partner;
+      setCustEmail(p.email || ""); setCustAddress(p.address || ""); setCustCity(p.city || "");
+      setCustPostalCode(p.postal_code || ""); setCustProvince(p.province || ""); setPartnerId(p.id);
+    }
   }
 
   async function submit() {
@@ -146,7 +164,15 @@ function Rectificativa() {
     if (!reason.trim()) { setError("Indica el motivo de la rectificación."); return; }
     if (!lines.length || lines.some((l) => !l.description.trim() || l.quantity <= 0)) { setError("Revisa las líneas a abonar."); return; }
     setSaving(true); setError(null); setResult(null);
-    const res = await adminCreateCreditNote({ rectifies_invoice_id: selected.id, reason: reason.trim(), lines, send_email: sendEmail });
+    const res = await adminCreateCreditNote({
+      rectifies_invoice_id: selected.source === "nueva" ? selected.id : null,
+      rectifies_numero_externo: selected.source === "odoo" ? selected.numero : null,
+      customer_name: selected.customer_name, customer_cif: selected.cif || null,
+      customer_email: custEmail || null, customer_address: custAddress || null,
+      customer_city: custCity || null, customer_postal_code: custPostalCode || null, customer_province: custProvince || null,
+      partner_id: partnerId,
+      reason: reason.trim(), lines, send_email: sendEmail,
+    });
     setSaving(false);
     if (!res.ok) { setError(res.error || "No se pudo crear la rectificativa."); return; }
     setResult(res.numero || null);
@@ -156,7 +182,8 @@ function Rectificativa() {
   return (
     <div>
       <p className="lead" style={{ marginTop: 0 }}>
-        Busca la factura original (nueva de la web, no del histórico de Odoo) y genera su abono con numeración legal continuada.
+        Busca la factura original — tanto nuevas de la web como del histórico de Odoo — y genera su abono
+        con numeración legal continuada (<code>REINV/AAAA/NNNNN</code>).
       </p>
       {result && <p style={{ background: "var(--cream)", padding: "8px 12px", borderRadius: 6 }}>✓ Rectificativa <b>{result}</b> creada correctamente{sendEmail ? " y enviada por email" : ""}.</p>}
       {error && <p style={{ color: "#b00020" }}>{error}</p>}
@@ -169,13 +196,14 @@ function Rectificativa() {
           </form>
           {results.length > 0 && (
             <table className="adm-table">
-              <thead><tr><th>Número</th><th>Cliente</th><th>Fecha</th><th>Total</th><th /></tr></thead>
+              <thead><tr><th>Número</th><th>Origen</th><th>Cliente</th><th>Fecha</th><th>Total</th><th /></tr></thead>
               <tbody>
                 {results.map((r) => (
-                  <tr key={r.id}>
+                  <tr key={`${r.source}-${r.numero}`}>
                     <td><code>{r.numero}</code></td>
+                    <td>{r.source === "nueva" ? "Nueva" : "Odoo (histórico)"}</td>
                     <td>{r.customer_name}</td>
-                    <td>{fdate(r.issue_date)}</td>
+                    <td>{r.issue_date ? fdate(r.issue_date) : "—"}</td>
                     <td>{euro(r.total)}</td>
                     <td><button className="btn-sm" onClick={() => select(r)}>Elegir →</button></td>
                   </tr>
@@ -188,11 +216,28 @@ function Rectificativa() {
 
       {selected && (
         <div>
-          <p>Rectificando <b>{selected.numero}</b> ({selected.customer_name}, {euro(selected.total)}) — <button className="btn-sm" onClick={() => setSelected(null)}>Cambiar</button></p>
+          <p>
+            Rectificando <b>{selected.numero}</b> ({selected.customer_name}, {euro(selected.total)})
+            {selected.source === "odoo" && <span style={{ color: "var(--muted)" }}> — histórico de Odoo</span>}
+            {" — "}<button className="btn-sm" onClick={() => setSelected(null)}>Cambiar</button>
+          </p>
           <label style={{ display: "block", marginBottom: 12, maxWidth: 480 }}>
             Motivo de la rectificación *
             <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Ej: devolución parcial, error en cantidad..." style={{ width: "100%" }} />
           </label>
+
+          {selected.source === "odoo" && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16, maxWidth: 640 }}>
+              <label>Email (para enviarla){!custEmail && !loadingLines && <span style={{ color: "var(--muted)", fontWeight: 400 }}> — sin coincidencia en Directorio, rellénalo si quieres enviarla</span>}
+                <input value={custEmail} onChange={(e) => setCustEmail(e.target.value)} />
+              </label>
+              <label>Ciudad<input value={custCity} onChange={(e) => setCustCity(e.target.value)} /></label>
+              <label>Provincia<input value={custProvince} onChange={(e) => setCustProvince(e.target.value)} /></label>
+              <label>Código postal<input value={custPostalCode} onChange={(e) => setCustPostalCode(e.target.value)} /></label>
+              <label style={{ gridColumn: "1 / -1" }}>Dirección<input value={custAddress} onChange={(e) => setCustAddress(e.target.value)} /></label>
+            </div>
+          )}
+
           {loadingLines ? <p>Cargando líneas…</p> : (
             <>
               <p className="lead" style={{ fontSize: 12 }}>Ajusta las líneas a abonar (por defecto, las mismas que la factura original — bórralas o cambia cantidades si es un abono parcial).</p>

@@ -11,12 +11,13 @@ export default function HistoricoFacturas() {
   const [downloading, setDownloading] = useState<string | null>(null);
   const [years, setYears] = useState<{ year: number; count: number }[]>([]);
   const [year, setYear] = useState<number | null>(null);
+  const [type, setType] = useState<"all" | "invoice" | "credit_note">("all");
   const [nativeTotal, setNativeTotal] = useState(0);
   const [erpTotal, setErpTotal] = useState(0);
 
-  async function load(query?: string, y?: number | null) {
+  async function load(query?: string, y?: number | null, t?: "all" | "invoice" | "credit_note") {
     setLoading(true);
-    const res = await adminInvoiceHistoryList({ q: query, year: y ?? undefined });
+    const res = await adminInvoiceHistoryList({ q: query, year: y ?? undefined, type: (t && t !== "all") ? t : undefined });
     setLoading(false);
     if (res.ok) { setRows(res.rows ?? []); setNativeTotal(res.nativeTotal ?? 0); setErpTotal(res.erpTotal ?? 0); }
   }
@@ -25,10 +26,8 @@ export default function HistoricoFacturas() {
     adminInvoiceHistoryYears().then((res) => { if (res.ok) setYears(res.years ?? []); });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function selectYear(y: number | null) {
-    setYear(y);
-    load(q, y);
-  }
+  function selectYear(y: number | null) { setYear(y); load(q, y, type); }
+  function selectType(t: "all" | "invoice" | "credit_note") { setType(t); load(q, year, t); }
 
   async function download(id: string) {
     setDownloading(id);
@@ -46,10 +45,16 @@ export default function HistoricoFacturas() {
         de Odoo. {nativeTotal + erpTotal > 0 && `${(nativeTotal + erpTotal).toLocaleString("es-ES")} facturas en total (${nativeTotal} nuevas, ${erpTotal} del ERP)`}
         {year ? `, filtrando por ${year}` : rows.length >= 200 ? " — mostrando las 200 más recientes, filtra por año para ver más" : ""}.
       </p>
-      <form onSubmit={(e) => { e.preventDefault(); load(q, year); }} style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+      <form onSubmit={(e) => { e.preventDefault(); load(q, year, type); }} style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por número o cliente" style={{ flex: 1, maxWidth: 360 }} />
         <button className="btn" disabled={loading}>{loading ? "Buscando…" : "Buscar"}</button>
       </form>
+
+      <div className="adm-tabs" style={{ marginBottom: 12 }}>
+        <button className={type === "all" ? "on" : ""} onClick={() => selectType("all")}>Todas</button>
+        <button className={type === "invoice" ? "on" : ""} onClick={() => selectType("invoice")}>Facturas de venta</button>
+        <button className={type === "credit_note" ? "on" : ""} onClick={() => selectType("credit_note")}>Facturas rectificativas</button>
+      </div>
 
       {years.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
@@ -71,7 +76,11 @@ export default function HistoricoFacturas() {
             {rows.map((r, idx) => (
               <tr key={`${r.numero}-${idx}`}>
                 <td className="mono">{r.numero}</td>
-                <td>{r.origen === "nueva" ? (r.kind === "credit_note" ? "Rectificativa" : "Nueva") : "Odoo (histórico)"}</td>
+                <td>
+                  {r.origen === "nueva"
+                    ? (r.kind === "credit_note" ? "Rectificativa" : "Nueva")
+                    : (r.kind === "credit_note" ? "Odoo (rectificativa)" : "Odoo (histórico)")}
+                </td>
                 <td>{r.cliente || "—"}</td>
                 <td>{r.fecha ? fdate(r.fecha) : "—"}</td>
                 <td className="r">{r.total != null ? euro(r.total) : "—"}</td>
