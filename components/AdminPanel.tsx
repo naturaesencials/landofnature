@@ -63,13 +63,19 @@ export default function AdminPanel(p: Props) {
 /* ---------------- Productos ---------------- */
 function Productos({ products }: { products: Prod[] }) {
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"activos" | "archivados" | "todos">("activos");
+  const [filter, setFilter] = useState<"activos" | "ocultos" | "archivados" | "todos">("activos");
   const [list, setList] = useState<Prod[]>(products);
   const [open, setOpen] = useState<string | null>(null);
-  const byFilter = list.filter((r) => filter === "todos" ? true : filter === "activos" ? r.active : !r.active);
+  const byFilter = list.filter((r) =>
+    filter === "todos" ? true :
+    filter === "activos" ? r.active :
+    filter === "ocultos" ? (!r.active && !r.archived) :
+    !!r.archived
+  );
   const filtered = byFilter.filter((r) => `${r.brand} ${r.name} ${r.sku} ${r.barcode ?? ""} ${r.family} ${r.category}`.toLowerCase().includes(q.toLowerCase()));
   const activosCount = list.filter((r) => r.active).length;
-  const archivadosCount = list.filter((r) => !r.active).length;
+  const ocultosCount = list.filter((r) => !r.active && !r.archived).length;
+  const archivadosCount = list.filter((r) => r.archived).length;
 
   function onSaved(updated: Prod) {
     setList((rs) => rs.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)));
@@ -79,6 +85,7 @@ function Productos({ products }: { products: Prod[] }) {
     <div>
       <div className="adm-tabs" style={{ marginBottom: 14 }}>
         <button className={filter === "activos" ? "on" : ""} onClick={() => setFilter("activos")}>Activos <span>{activosCount}</span></button>
+        <button className={filter === "ocultos" ? "on" : ""} onClick={() => setFilter("ocultos")}>Ocultos <span>{ocultosCount}</span></button>
         <button className={filter === "archivados" ? "on" : ""} onClick={() => setFilter("archivados")}>Archivados <span>{archivadosCount}</span></button>
         <button className={filter === "todos" ? "on" : ""} onClick={() => setFilter("todos")}>Todos <span>{list.length}</span></button>
       </div>
@@ -88,7 +95,7 @@ function Productos({ products }: { products: Prod[] }) {
       </div>
       <div className="adm-tablewrap">
         <table className="adm-table">
-          <thead><tr><th>Producto</th><th>SKU</th><th className="r">Precio € (sin IVA)</th><th className="r">Stock</th><th className="c">Activo</th><th></th></tr></thead>
+          <thead><tr><th>Producto</th><th>SKU</th><th className="r">Precio € (sin IVA)</th><th className="r">Stock</th><th className="c">Estado</th><th></th></tr></thead>
           <tbody>
             {filtered.map((r) => (
               <Fragment key={r.id}>
@@ -97,7 +104,7 @@ function Productos({ products }: { products: Prod[] }) {
                   <td className="mono">{r.sku}</td>
                   <td className="r">{euro(r.public_price)}</td>
                   <td className="r">{r.stock}</td>
-                  <td className="c">{r.active ? "✓" : "—"}</td>
+                  <td className="c">{r.archived ? "Archivado" : r.active ? "Activo" : "Oculto"}</td>
                   <td className="c"><button className="adm-link" onClick={() => setOpen(open === r.id ? null : r.id)}>{open === r.id ? "Ocultar" : "Editar"}</button></td>
                 </tr>
                 {open === r.id && (
@@ -122,7 +129,7 @@ function ProductoDetalle({ product, onSaved, onCancel }: { product: Prod; onSave
     public_price: String(product.public_price ?? 0), vat_rate: String(product.vat_rate ?? 0.21),
     units_per_box: String(product.units_per_box ?? ""), weight_kg: String(product.weight_kg ?? ""),
     low_stock_threshold: String(product.low_stock_threshold ?? 20), active: product.active,
-    image_url: product.image_url || "", cost: String(product.cost ?? ""),
+    image_url: product.image_url || "", cost: String(product.cost ?? ""), archived: !!product.archived,
   });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -138,7 +145,7 @@ function ProductoDetalle({ product, onSaved, onCancel }: { product: Prod; onSave
       units_per_box: f.units_per_box.trim() ? parseInt(f.units_per_box) : null,
       weight_kg: f.weight_kg.trim() ? num(f.weight_kg) : null,
       low_stock_threshold: parseInt(f.low_stock_threshold) || 20, active: f.active, image_url: f.image_url || null,
-      cost: f.cost.trim() ? num(f.cost) : null,
+      cost: f.cost.trim() ? num(f.cost) : null, archived: f.archived,
     });
     setBusy(false);
     if (!res.ok) { setErr(res.error || "Error"); return; }
@@ -150,7 +157,7 @@ function ProductoDetalle({ product, onSaved, onCancel }: { product: Prod; onSave
       units_per_box: f.units_per_box.trim() ? parseInt(f.units_per_box) : null,
       weight_kg: f.weight_kg.trim() ? num(f.weight_kg) : null,
       low_stock_threshold: parseInt(f.low_stock_threshold) || 20, active: f.active, image_url: f.image_url || null,
-      cost: f.cost.trim() ? num(f.cost) : null,
+      cost: f.cost.trim() ? num(f.cost) : null, archived: f.archived,
     });
   }
 
@@ -175,6 +182,7 @@ function ProductoDetalle({ product, onSaved, onCancel }: { product: Prod; onSave
       <label style={{ gridColumn: "1 / -1" }}>INCI<textarea className="adm-input" rows={2} value={f.inci} onChange={(e) => set({ inci: e.target.value })} /></label>
       <label className="adm-check"><input type="checkbox" checked={f.inci_verified} onChange={(e) => set({ inci_verified: e.target.checked })} /> INCI verificado</label>
       <label className="adm-check"><input type="checkbox" checked={f.active} onChange={(e) => set({ active: e.target.checked })} /> Activo (visible en la tienda)</label>
+      <label className="adm-check"><input type="checkbox" checked={f.archived} onChange={(e) => set({ archived: e.target.checked, active: e.target.checked ? false : f.active })} /> Archivado (descatalogado — distinto de "oculto")</label>
       <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8, alignItems: "center" }}>
         <button className="adm-save" disabled={busy} onClick={save}>{busy ? "…" : "Guardar cambios"}</button>
         <button className="adm-link" onClick={onCancel}>Cancelar</button>
