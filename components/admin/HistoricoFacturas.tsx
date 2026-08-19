@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { euro } from "@/lib/types";
 import { fdate } from "./types";
 import { adminInvoiceHistoryList, adminInvoicePdfUrl, adminInvoiceHistoryYears, adminRevertedInvoicesWithCandidates, adminPendingInvoices, adminMarkInvoicePaid, adminPaymentAccountsSummary, type InvoiceHistoryRow, type RevertedInvoiceRow, type PendingInvoiceRow, type PaymentAccountSummary } from "@/app/admin/actions";
+import AttachmentsButton from "./AttachmentsButton";
 
 export default function HistoricoFacturas() {
   const [q, setQ] = useState("");
@@ -246,6 +247,9 @@ export default function HistoricoFacturas() {
                     <button className="adm-link" onClick={() => download(r.id!)} disabled={downloading === r.id}>
                       {downloading === r.id ? "…" : "PDF"}
                     </button>
+                  )}
+                  {r.origen === "odoo" && (
+                    <AttachmentsButton categoria={r.kind === "credit_note" ? "rectificativas" : "facturas"} referencia={r.numero} />
                   )}
                 </td>
               </tr>

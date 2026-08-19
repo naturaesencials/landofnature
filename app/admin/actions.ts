@@ -602,6 +602,24 @@ export async function adminRealDashboardStats(): Promise<Res & { stats?: RealDas
   };
 }
 
+export type ErpAttachment = { nombre_archivo: string; mimetype: string | null; tamano_bytes: number | null; storage_path: string };
+export async function adminErpAttachments(categoria: string, referencia: string): Promise<Res & { rows?: ErpAttachment[] }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const { data, error } = await supabase.from("erp_attachments").select("nombre_archivo,mimetype,tamano_bytes,storage_path")
+    .eq("categoria", categoria).eq("referencia_normalizada", referencia);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, rows: (data ?? []) as ErpAttachment[] };
+}
+
+export async function adminErpAttachmentUrl(storagePath: string): Promise<Res & { url?: string }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const { data, error } = await supabase.storage.from("odoo-adjuntos").createSignedUrl(storagePath, 300);
+  if (error || !data) return { ok: false, error: error?.message || "No se pudo generar el enlace." };
+  return { ok: true, url: data.signedUrl };
+}
+
 /* ---------------- Pendientes de pago + marcar como pagada ---------------- */
 
 export type PendingInvoiceRow = {

@@ -3,6 +3,7 @@ import { Fragment, useEffect, useState } from "react";
 import { euro } from "@/lib/types";
 import { fdate } from "./types";
 import { adminSaleOrdersList, adminSaleOrderDetail, adminSaleOrdersYears, type SaleOrderListRow, type SaleOrderDetail } from "@/app/admin/actions";
+import AttachmentsButton from "./AttachmentsButton";
 
 export default function HistorialPedidos() {
   const [q, setQ] = useState("");
@@ -106,6 +107,9 @@ export default function HistorialPedidos() {
                             {detail.order.referencia_cliente ? ` · Ref. cliente: ${detail.order.referencia_cliente}` : ""}
                           </div>
                         )}
+                        <div style={{ marginTop: 10 }}>
+                          <AttachmentsButton categoria="pedidos" referencia={o.referencia} />
+                        </div>
                         {detail.messages.length > 0 && (
                           <div style={{ marginTop: 14 }}>
                             <div className="adm-dt">Conversación interna ({detail.messages.length})</div>

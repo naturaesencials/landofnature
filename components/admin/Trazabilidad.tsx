@@ -7,6 +7,7 @@ import {
   adminErpProductionOrdersYears, adminErpProductionOrdersByYear,
   type ErpSearchResult, type ErpLoteDetail, type PurchaseHistoryRow, type ProductionOrderByYearRow,
 } from "@/app/admin/actions";
+import AttachmentsButton from "./AttachmentsButton";
 
 type Candidate = { product_code: string | null; product_name: string | null };
 
@@ -422,6 +423,11 @@ export default function Trazabilidad() {
                                       </tbody>
                                     </table>
                                   ) : <p style={{ margin: "8px 0" }}>No hay facturas de compra registradas para este producto.</p>
+                                )}
+                                {r.component_code && (
+                                  <div style={{ marginTop: 8 }}>
+                                    <AttachmentsButton categoria="productos" referencia={r.component_code} />
+                                  </div>
                                 )}
                               </td>
                             </tr>
