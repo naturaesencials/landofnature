@@ -602,6 +602,66 @@ export async function adminRealDashboardStats(): Promise<Res & { stats?: RealDas
   };
 }
 
+/* ---------------- Pendientes de pago + marcar como pagada ---------------- */
+
+export type PendingInvoiceRow = {
+  numero: string; cliente: string | null; fecha: string | null; total: number | null;
+  estado: string | null; origen: "nueva" | "odoo"; id?: string;
+};
+export async function adminPendingInvoices(): Promise<Res & { rows?: PendingInvoiceRow[] }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const [nativeRes, erpRes] = await Promise.all([
+    supabase.from("native_invoices").select("id,numero,issue_date,customer_name,total,status").eq("kind", "invoice").in("status", ["issued", "sent"]).order("issue_date", { ascending: false }),
+    supabase.from("erp_invoices_sale").select("numero,fecha,partner,total,estado_pago")
+      .not("estado_pago", "in", "(Pagado,En proceso de pago,Revertido,Cancelado)").order("fecha", { ascending: false }),
+  ]);
+  if (nativeRes.error) return { ok: false, error: nativeRes.error.message };
+  if (erpRes.error) return { ok: false, error: erpRes.error.message };
+  const rows: PendingInvoiceRow[] = [
+    ...(nativeRes.data ?? []).map((i) => ({ numero: i.numero, cliente: i.customer_name, fecha: i.issue_date, total: i.total, estado: i.status, origen: "nueva" as const, id: i.id })),
+    ...(erpRes.data ?? []).map((i) => ({ numero: i.numero, cliente: i.partner, fecha: i.fecha, total: i.total, estado: i.estado_pago, origen: "odoo" as const })),
+  ].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
+  return { ok: true, rows };
+}
+
+export async function adminMarkInvoicePaid(input: { origen: "nueva" | "odoo"; numero: string; cuentaPago: string }): Promise<Res> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  if (!input.cuentaPago.trim()) return { ok: false, error: "Indica desde qué cuenta se ha pagado." };
+  if (input.origen === "nueva") {
+    const { error } = await supabase.from("native_invoices").update({ status: "paid", cuenta_pago: input.cuentaPago.trim() }).eq("numero", input.numero);
+    if (error) return { ok: false, error: error.message };
+  } else {
+    const { data: inv } = await supabase.from("erp_invoices_sale").select("total").eq("numero", input.numero).maybeSingle();
+    const { error } = await supabase.from("erp_invoices_sale").update({
+      estado_pago: "Pagado", cuenta_pago: input.cuentaPago.trim(),
+      importe_pagado: inv?.total ?? null, importe_adeudado: null,
+    }).eq("numero", input.numero);
+    if (error) return { ok: false, error: error.message };
+  }
+  return { ok: true };
+}
+
+export type PaymentAccountSummary = { cuenta: string; count: number; total: number };
+export async function adminPaymentAccountsSummary(): Promise<Res & { rows?: PaymentAccountSummary[] }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const [nativeRes, erpRes] = await Promise.all([
+    supabase.from("native_invoices").select("cuenta_pago,total").not("cuenta_pago", "is", null),
+    supabase.from("erp_invoices_sale").select("cuenta_pago,total").not("cuenta_pago", "is", null),
+  ]);
+  const map = new Map<string, { count: number; total: number }>();
+  for (const r of [...(nativeRes.data ?? []), ...(erpRes.data ?? [])]) {
+    if (!r.cuenta_pago) continue;
+    const cur = map.get(r.cuenta_pago) ?? { count: 0, total: 0 };
+    cur.count += 1; cur.total += Number(r.total || 0);
+    map.set(r.cuenta_pago, cur);
+  }
+  const rows = Array.from(map.entries()).map(([cuenta, v]) => ({ cuenta, count: v.count, total: Math.round(v.total * 100) / 100 })).sort((a, b) => b.total - a.total);
+  return { ok: true, rows };
+}
+
 export type RevertedInvoiceRow = {
   numero: string; cliente: string | null; fecha: string | null; total: number | null; origen: string | null;
   candidatas: { numero: string; total: number | null; motivo?: string | null; real: boolean }[]; ambiguo: boolean;

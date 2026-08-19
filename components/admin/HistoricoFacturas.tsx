@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { euro } from "@/lib/types";
 import { fdate } from "./types";
-import { adminInvoiceHistoryList, adminInvoicePdfUrl, adminInvoiceHistoryYears, adminRevertedInvoicesWithCandidates, type InvoiceHistoryRow, type RevertedInvoiceRow } from "@/app/admin/actions";
+import { adminInvoiceHistoryList, adminInvoicePdfUrl, adminInvoiceHistoryYears, adminRevertedInvoicesWithCandidates, adminPendingInvoices, adminMarkInvoicePaid, adminPaymentAccountsSummary, type InvoiceHistoryRow, type RevertedInvoiceRow, type PendingInvoiceRow, type PaymentAccountSummary } from "@/app/admin/actions";
 
 export default function HistoricoFacturas() {
   const [q, setQ] = useState("");
@@ -12,18 +12,38 @@ export default function HistoricoFacturas() {
   const [years, setYears] = useState<{ year: number; count: number }[]>([]);
   const [year, setYear] = useState<number | null>(null);
   const [type, setType] = useState<"all" | "invoice" | "credit_note">("all");
-  const [vista, setVista] = useState<"todas" | "pagadas" | "revertidas">("todas");
+  const [vista, setVista] = useState<"todas" | "pagadas" | "pendientes" | "revertidas" | "cuentas">("todas");
   const [revertidas, setRevertidas] = useState<RevertedInvoiceRow[]>([]);
   const [loadingRevertidas, setLoadingRevertidas] = useState(false);
+  const [pendientes, setPendientes] = useState<PendingInvoiceRow[]>([]);
+  const [loadingPendientes, setLoadingPendientes] = useState(false);
+  const [marcando, setMarcando] = useState<string | null>(null);
+  const [cuentaInput, setCuentaInput] = useState<Record<string, string>>({});
+  const [cuentas, setCuentas] = useState<PaymentAccountSummary[]>([]);
+  const [loadingCuentas, setLoadingCuentas] = useState(false);
   const [nativeTotal, setNativeTotal] = useState(0);
   const [erpTotal, setErpTotal] = useState(0);
 
-  async function load(query?: string, y?: number | null, t?: "all" | "invoice" | "credit_note", v?: "todas" | "pagadas" | "revertidas") {
+  async function load(query?: string, y?: number | null, t?: "all" | "invoice" | "credit_note", v?: "todas" | "pagadas" | "pendientes" | "revertidas" | "cuentas") {
     if (v === "revertidas") {
       setLoadingRevertidas(true);
       const res = await adminRevertedInvoicesWithCandidates();
       setLoadingRevertidas(false);
       if (res.ok) setRevertidas(res.rows ?? []);
+      return;
+    }
+    if (v === "pendientes") {
+      setLoadingPendientes(true);
+      const res = await adminPendingInvoices();
+      setLoadingPendientes(false);
+      if (res.ok) setPendientes(res.rows ?? []);
+      return;
+    }
+    if (v === "cuentas") {
+      setLoadingCuentas(true);
+      const res = await adminPaymentAccountsSummary();
+      setLoadingCuentas(false);
+      if (res.ok) setCuentas(res.rows ?? []);
       return;
     }
     setLoading(true);
@@ -41,7 +61,17 @@ export default function HistoricoFacturas() {
 
   function selectYear(y: number | null) { setYear(y); load(q, y, type, vista); }
   function selectType(t: "all" | "invoice" | "credit_note") { setType(t); load(q, year, t, vista); }
-  function selectVista(v: "todas" | "pagadas" | "revertidas") { setVista(v); load(q, year, type, v); }
+  function selectVista(v: "todas" | "pagadas" | "pendientes" | "revertidas" | "cuentas") { setVista(v); load(q, year, type, v); }
+
+  async function marcarPagada(origen: "nueva" | "odoo", numero: string) {
+    const cuenta = cuentaInput[numero];
+    if (!cuenta || !cuenta.trim()) { alert("Indica desde qué cuenta se ha pagado."); return; }
+    setMarcando(numero);
+    const res = await adminMarkInvoicePaid({ origen, numero, cuentaPago: cuenta });
+    setMarcando(null);
+    if (!res.ok) { alert(res.error || "No se pudo marcar como pagada."); return; }
+    setPendientes((rs) => rs.filter((r) => r.numero !== numero));
+  }
 
   async function download(id: string) {
     setDownloading(id);
@@ -72,7 +102,9 @@ export default function HistoricoFacturas() {
       <div className="adm-tabs" style={{ marginBottom: 16 }}>
         <button className={vista === "todas" ? "on" : ""} onClick={() => selectVista("todas")}>Todas</button>
         <button className={vista === "pagadas" ? "on" : ""} onClick={() => selectVista("pagadas")}>Solo pagadas</button>
+        <button className={vista === "pendientes" ? "on" : ""} onClick={() => selectVista("pendientes")}>Pendientes de pago</button>
         <button className={vista === "revertidas" ? "on" : ""} onClick={() => selectVista("revertidas")}>Revertidas (a revisar)</button>
+        <button className={vista === "cuentas" ? "on" : ""} onClick={() => selectVista("cuentas")}>Pagos por cuenta</button>
       </div>
       {vista === "revertidas" && (
         <p className="lead" style={{ background: "#FBF3E4", padding: "8px 12px", borderRadius: 6 }}>
@@ -82,7 +114,7 @@ export default function HistoricoFacturas() {
         </p>
       )}
 
-      {vista !== "revertidas" && years.length > 0 && (
+      {vista !== "revertidas" && vista !== "pendientes" && vista !== "cuentas" && years.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
           <button className={year === null ? "btn-sm on" : "btn-sm"} onClick={() => selectYear(null)}>
             Todos <span style={{ opacity: 0.6 }}>({years.reduce((s, y) => s + y.count, 0)})</span>
@@ -95,7 +127,63 @@ export default function HistoricoFacturas() {
         </div>
       )}
 
-      {vista === "revertidas" ? (
+      {vista === "pendientes" ? (
+        <div className="adm-tablewrap">
+          {loadingPendientes && <p>Cargando…</p>}
+          {!loadingPendientes && (
+            <table className="adm-table">
+              <thead><tr><th>Número</th><th>Origen</th><th>Cliente</th><th>Fecha</th><th className="r">Total</th><th>Estado</th><th>Marcar pagada</th></tr></thead>
+              <tbody>
+                {pendientes.map((r) => (
+                  <tr key={r.numero}>
+                    <td className="mono">{r.numero}</td>
+                    <td>{r.origen === "nueva" ? "Nueva" : "Odoo (histórico)"}</td>
+                    <td>{r.cliente || "—"}</td>
+                    <td>{r.fecha ? fdate(r.fecha) : "—"}</td>
+                    <td className="r">{r.total != null ? euro(r.total) : "—"}</td>
+                    <td>{r.estado || "—"}</td>
+                    <td>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <input
+                          placeholder="Cuenta desde la que se pagó"
+                          value={cuentaInput[r.numero] || ""}
+                          onChange={(e) => setCuentaInput((s) => ({ ...s, [r.numero]: e.target.value }))}
+                          style={{ fontSize: 12, padding: "4px 6px", width: 160 }}
+                        />
+                        <button className="btn-sm" disabled={marcando === r.numero} onClick={() => marcarPagada(r.origen, r.numero)}>
+                          {marcando === r.numero ? "…" : "Marcar pagada"}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {!loadingPendientes && !pendientes.length && <p className="adm-empty">Sin facturas pendientes de pago 🎉</p>}
+        </div>
+      ) : vista === "cuentas" ? (
+        <div className="adm-tablewrap">
+          {loadingCuentas && <p>Cargando…</p>}
+          {!loadingCuentas && (
+            <table className="adm-table">
+              <thead><tr><th>Cuenta</th><th className="r">Nº facturas</th><th className="r">Total</th></tr></thead>
+              <tbody>
+                {cuentas.map((c) => (
+                  <tr key={c.cuenta}>
+                    <td>{c.cuenta}</td>
+                    <td className="r">{c.count}</td>
+                    <td className="r">{euro(c.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {!loadingCuentas && !cuentas.length && (
+            <p className="adm-empty">Aún no hay facturas con cuenta de pago registrada. Se rellena al marcar una factura como pagada, o al importar el dato desde Odoo.</p>
+          )}
+        </div>
+      ) : vista === "revertidas" ? (
         <div className="adm-tablewrap">
           {loadingRevertidas && <p>Cargando…</p>}
           {!loadingRevertidas && (
@@ -166,7 +254,7 @@ export default function HistoricoFacturas() {
         </table>
       </div>
       )}
-      {vista !== "revertidas" && !loading && !rows.length && <p className="adm-empty">Sin resultados.</p>}
+      {vista === "todas" || vista === "pagadas" ? (!loading && !rows.length && <p className="adm-empty">Sin resultados.</p>) : null}
     </div>
   );
 }
