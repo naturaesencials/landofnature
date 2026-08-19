@@ -108,6 +108,7 @@ export default function HistorialPedidos() {
                           </div>
                         )}
                         <div style={{ marginTop: 10 }}>
+                          <div className="adm-dt">Adjuntos</div>
                           <AttachmentsButton categoria="pedidos" referencia={o.referencia} />
                         </div>
                         {detail.messages.length > 0 && (

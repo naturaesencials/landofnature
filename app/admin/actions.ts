@@ -620,6 +620,31 @@ export async function adminErpAttachmentUrl(storagePath: string): Promise<Res & 
   return { ok: true, url: data.signedUrl };
 }
 
+/* ---------------- Adjuntos importados de Odoo (facturas, rectificativas, pedidos, productos) ---------------- */
+
+export type AttachmentRow = { id: number; nombre_archivo: string; mimetype: string | null; tamano_bytes: number | null; storage_path: string };
+
+function safeAttachmentRef(numero: string): string {
+  return numero.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+export async function adminAttachmentsFor(categoria: "facturas" | "rectificativas" | "pedidos" | "productos", referencia: string): Promise<Res & { rows?: AttachmentRow[] }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const ref = categoria === "facturas" || categoria === "rectificativas" ? safeAttachmentRef(referencia) : referencia;
+  const { data, error } = await supabase.from("erp_attachments").select("id,nombre_archivo,mimetype,tamano_bytes,storage_path").eq("categoria", categoria).eq("referencia", ref);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, rows: (data ?? []) as AttachmentRow[] };
+}
+
+export async function adminAttachmentSignedUrl(storagePath: string): Promise<Res & { url?: string }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const { data, error } = await supabase.storage.from("odoo-adjuntos").createSignedUrl(storagePath, 300);
+  if (error || !data) return { ok: false, error: error?.message || "No se pudo generar el enlace." };
+  return { ok: true, url: data.signedUrl };
+}
+
 /* ---------------- Pendientes de pago + marcar como pagada ---------------- */
 
 export type PendingInvoiceRow = {

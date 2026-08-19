@@ -426,6 +426,7 @@ export default function Trazabilidad() {
                                 )}
                                 {r.component_code && (
                                   <div style={{ marginTop: 8 }}>
+                                    <div className="adm-dt">Fichas técnicas / adjuntos</div>
                                     <AttachmentsButton categoria="productos" referencia={r.component_code} />
                                   </div>
                                 )}
