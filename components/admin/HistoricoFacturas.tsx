@@ -111,7 +111,11 @@ export default function HistoricoFacturas() {
                     <td>
                       {r.candidatas.length === 0 && <span style={{ color: "var(--muted)" }}>Sin candidata (sin pedido de origen registrado)</span>}
                       {r.candidatas.map((c) => (
-                        <div key={c.numero}><code>{c.numero}</code> {c.total != null && `(${euro(c.total)})`}</div>
+                        <div key={c.numero}>
+                          <code>{c.numero}</code> {c.total != null && `(${euro(c.total)})`}
+                          {c.real && <span style={{ fontSize: 10, color: "var(--olive)", marginLeft: 4 }}>✓ confirmado por Odoo</span>}
+                          {c.motivo && <div style={{ fontSize: 11, color: "var(--muted)" }}>{c.motivo}</div>}
+                        </div>
                       ))}
                       {r.ambiguo && r.candidatas.length > 0 && (
                         <div style={{ fontSize: 11, color: "#b06a00", marginTop: 2 }}>⚠ A confirmar — varias facturas/rectificativas comparten pedido</div>

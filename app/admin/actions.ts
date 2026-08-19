@@ -588,7 +588,7 @@ export async function adminRealDashboardStats(): Promise<Res & { stats?: RealDas
 
 export type RevertedInvoiceRow = {
   numero: string; cliente: string | null; fecha: string | null; total: number | null; origen: string | null;
-  candidatas: { numero: string; total: number | null }[]; ambiguo: boolean;
+  candidatas: { numero: string; total: number | null; motivo?: string | null; real: boolean }[]; ambiguo: boolean;
 };
 export async function adminRevertedInvoicesWithCandidates(): Promise<Res & { rows?: RevertedInvoiceRow[] }> {
   const supabase = await adminClient();
@@ -597,11 +597,24 @@ export async function adminRevertedInvoicesWithCandidates(): Promise<Res & { row
     .select("numero,partner,fecha,total,origen").eq("estado_pago", "Revertido").order("fecha", { ascending: false });
   if (error) return { ok: false, error: error.message };
 
+  const numeros = (reverted ?? []).map((r) => r.numero);
   const origenes = Array.from(new Set((reverted ?? []).map((r) => r.origen).filter(Boolean))) as string[];
-  const [creditNotesRes, invoicesSameOrigenRes] = await Promise.all([
+  const [realLinksRes, creditNotesRes, invoicesSameOrigenRes] = await Promise.all([
+    numeros.length ? supabase.from("erp_credit_note_links").select("rectificativa,factura_original,motivo").in("factura_original", numeros) : Promise.resolve({ data: [] as { rectificativa: string; factura_original: string; motivo: string | null }[] }),
     origenes.length ? supabase.from("erp_credit_notes_sale").select("numero,origen,total").in("origen", origenes) : Promise.resolve({ data: [] as { numero: string; origen: string | null; total: number | null }[] }),
     origenes.length ? supabase.from("erp_invoices_sale").select("numero,origen").in("origen", origenes) : Promise.resolve({ data: [] as { numero: string; origen: string | null }[] }),
   ]);
+
+  // Totales de cada rectificativa (para mostrar importe también en los enlaces reales)
+  const cnTotalsByNumero = new Map<string, number | null>();
+  for (const cn of creditNotesRes.data ?? []) cnTotalsByNumero.set(cn.numero, cn.total);
+
+  const realByFactura = new Map<string, { numero: string; total: number | null; motivo?: string | null; real: boolean }[]>();
+  for (const link of realLinksRes.data ?? []) {
+    const arr = realByFactura.get(link.factura_original) ?? [];
+    arr.push({ numero: link.rectificativa, total: cnTotalsByNumero.get(link.rectificativa) ?? null, motivo: link.motivo, real: true });
+    realByFactura.set(link.factura_original, arr);
+  }
 
   const cnByOrigen = new Map<string, { numero: string; total: number | null }[]>();
   for (const cn of creditNotesRes.data ?? []) {
@@ -617,9 +630,14 @@ export async function adminRevertedInvoicesWithCandidates(): Promise<Res & { row
   }
 
   const rows: RevertedInvoiceRow[] = (reverted ?? []).map((r) => {
-    const candidatas = r.origen ? (cnByOrigen.get(r.origen) ?? []) : [];
-    const ambiguo = !r.origen || candidatas.length > 1 || (invCountByOrigen.get(r.origen) ?? 0) > 1;
-    return { numero: r.numero, cliente: r.partner, fecha: r.fecha, total: r.total, origen: r.origen, candidatas, ambiguo };
+    const real = realByFactura.get(r.numero);
+    if (real && real.length) {
+      return { numero: r.numero, cliente: r.partner, fecha: r.fecha, total: r.total, origen: r.origen, candidatas: real, ambiguo: false };
+    }
+    // sin enlace real de Odoo: fallback a la deducción por pedido de venta compartido
+    const deducidas = r.origen ? (cnByOrigen.get(r.origen) ?? []).map((c) => ({ ...c, real: false })) : [];
+    const ambiguo = !r.origen || deducidas.length > 1 || (invCountByOrigen.get(r.origen) ?? 0) > 1;
+    return { numero: r.numero, cliente: r.partner, fecha: r.fecha, total: r.total, origen: r.origen, candidatas: deducidas, ambiguo };
   });
   return { ok: true, rows };
 }
