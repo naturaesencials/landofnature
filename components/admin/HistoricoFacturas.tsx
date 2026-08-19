@@ -100,7 +100,15 @@ export default function HistoricoFacturas() {
                 <td>{r.cliente || "—"}</td>
                 <td>{r.fecha ? fdate(r.fecha) : "—"}</td>
                 <td className="r">{r.total != null ? euro(r.total) : "—"}</td>
-                <td>{r.estado || "—"}</td>
+                <td>
+                  {r.estado || "—"}
+                  {r.importeAdeudado != null && (
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                      Pagado: {euro(r.importePagado ?? 0)} · Adeudado: <b style={{ color: "#b06a00" }}>{euro(r.importeAdeudado)}</b>
+                      {r.notaPago && <div>{r.notaPago}</div>}
+                    </div>
+                  )}
+                </td>
                 <td className="c">
                   {r.origen === "nueva" && r.id && (
                     <button className="adm-link" onClick={() => download(r.id!)} disabled={downloading === r.id}>

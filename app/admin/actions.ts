@@ -613,6 +613,7 @@ export async function adminCreateCreditNote(input: CreditNoteInput): Promise<Res
 export type InvoiceHistoryRow = {
   numero: string; fecha: string | null; cliente: string | null; total: number | null;
   estado: string | null; estadoRaw: string | null; origen: "nueva" | "odoo"; kind: "invoice" | "credit_note"; id?: string;
+  importePagado?: number | null; importeAdeudado?: number | null; notaPago?: string | null;
 };
 
 const NATIVE_STATUS_LABEL: Record<string, string> = { issued: "Emitida", sent: "Enviada", paid: "Pagada", cancelled: "Cancelada" };
@@ -645,14 +646,14 @@ export async function adminInvoiceHistoryList(input: { q?: string; year?: number
       return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.issue_date, cliente: i.customer_name, total: i.total, estado: NATIVE_STATUS_LABEL[i.status] || i.status, estadoRaw: i.status, origen: "nueva" as const, kind: "invoice" as const, id: i.id })), count: count ?? 0, src: "native" as const };
     })());
     queries.push((async () => {
-      let query = supabase.from("erp_invoices_sale").select("numero,fecha,partner,total,estado_pago", { count: "exact" }).order("fecha", { ascending: false }).limit(limit);
+      let query = supabase.from("erp_invoices_sale").select("numero,fecha,partner,total,estado_pago,importe_pagado,importe_adeudado,nota_pago", { count: "exact" }).order("fecha", { ascending: false }).limit(limit);
       if (like) query = query.or(`numero.ilike.${esc(like)},partner.ilike.${esc(like)}`);
       if (input.year) query = query.gte("fecha", `${input.year}-01-01`).lt("fecha", `${input.year + 1}-01-01`);
       if (input.onlyPaid) query = query.in("estado_pago", ERP_PAID_STATES);
       if (input.onlyReverted) query = query.eq("estado_pago", "Revertido");
       const { data, error, count } = await query;
       if (error) throw error;
-      return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.fecha, cliente: i.partner, total: i.total, estado: displayEstadoPago(i.estado_pago), estadoRaw: i.estado_pago, origen: "odoo" as const, kind: "invoice" as const })), count: count ?? 0, src: "erp" as const };
+      return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.fecha, cliente: i.partner, total: i.total, estado: displayEstadoPago(i.estado_pago), estadoRaw: i.estado_pago, origen: "odoo" as const, kind: "invoice" as const, importePagado: i.importe_pagado, importeAdeudado: i.importe_adeudado, notaPago: i.nota_pago })), count: count ?? 0, src: "erp" as const };
     })());
   }
   if (wantCreditNotes) {
