@@ -690,21 +690,41 @@ export async function adminMarkInvoicePaid(input: { origen: "nueva" | "odoo"; nu
 }
 
 export type PaymentAccountSummary = { cuenta: string; count: number; total: number };
-export async function adminPaymentAccountsSummary(): Promise<Res & { rows?: PaymentAccountSummary[] }> {
+export async function adminPaymentAccountsSummary(): Promise<Res & { limpias?: PaymentAccountSummary[]; combinadas?: PaymentAccountSummary[] }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
   const [nativeRes, erpRes] = await Promise.all([
     supabase.from("native_invoices").select("cuenta_pago,total").not("cuenta_pago", "is", null),
     supabase.from("erp_invoices_sale").select("cuenta_pago,total").not("cuenta_pago", "is", null),
   ]);
-  const map = new Map<string, { count: number; total: number }>();
+  const limpiasMap = new Map<string, { count: number; total: number }>();
+  const combinadasMap = new Map<string, { count: number; total: number }>();
   for (const r of [...(nativeRes.data ?? []), ...(erpRes.data ?? [])]) {
     if (!r.cuenta_pago) continue;
+    const isCombinada = r.cuenta_pago.includes(" + ");
+    const map = isCombinada ? combinadasMap : limpiasMap;
     const cur = map.get(r.cuenta_pago) ?? { count: 0, total: 0 };
     cur.count += 1; cur.total += Number(r.total || 0);
     map.set(r.cuenta_pago, cur);
   }
-  const rows = Array.from(map.entries()).map(([cuenta, v]) => ({ cuenta, count: v.count, total: Math.round(v.total * 100) / 100 })).sort((a, b) => b.total - a.total);
+  const toRows = (m: Map<string, { count: number; total: number }>) =>
+    Array.from(m.entries()).map(([cuenta, v]) => ({ cuenta, count: v.count, total: Math.round(v.total * 100) / 100 })).sort((a, b) => b.total - a.total);
+  return { ok: true, limpias: toRows(limpiasMap), combinadas: toRows(combinadasMap) };
+}
+
+export type AccountInvoiceRow = { numero: string; cliente: string | null; fecha: string | null; total: number | null; origen: "nueva" | "odoo"; exclusiva: boolean };
+export async function adminInvoicesByAccount(cuenta: string): Promise<Res & { rows?: AccountInvoiceRow[] }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const like = `%${cuenta}%`;
+  const [nativeRes, erpRes] = await Promise.all([
+    supabase.from("native_invoices").select("numero,customer_name,issue_date,total,cuenta_pago").ilike("cuenta_pago", esc(like)).order("issue_date", { ascending: false }),
+    supabase.from("erp_invoices_sale").select("numero,partner,fecha,total,cuenta_pago").ilike("cuenta_pago", esc(like)).order("fecha", { ascending: false }),
+  ]);
+  const rows: AccountInvoiceRow[] = [
+    ...(nativeRes.data ?? []).map((i) => ({ numero: i.numero, cliente: i.customer_name, fecha: i.issue_date, total: i.total, origen: "nueva" as const, exclusiva: i.cuenta_pago === cuenta })),
+    ...(erpRes.data ?? []).map((i) => ({ numero: i.numero, cliente: i.partner, fecha: i.fecha, total: i.total, origen: "odoo" as const, exclusiva: i.cuenta_pago === cuenta })),
+  ].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
   return { ok: true, rows };
 }
 

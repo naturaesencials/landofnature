@@ -1,8 +1,8 @@
 "use client";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { euro } from "@/lib/types";
 import { fdate } from "./types";
-import { adminInvoiceHistoryList, adminInvoicePdfUrl, adminInvoiceHistoryYears, adminRevertedInvoicesWithCandidates, adminPendingInvoices, adminMarkInvoicePaid, adminPaymentAccountsSummary, type InvoiceHistoryRow, type RevertedInvoiceRow, type PendingInvoiceRow, type PaymentAccountSummary } from "@/app/admin/actions";
+import { adminInvoiceHistoryList, adminInvoicePdfUrl, adminInvoiceHistoryYears, adminRevertedInvoicesWithCandidates, adminPendingInvoices, adminMarkInvoicePaid, adminPaymentAccountsSummary, adminInvoicesByAccount, type InvoiceHistoryRow, type RevertedInvoiceRow, type PendingInvoiceRow, type PaymentAccountSummary, type AccountInvoiceRow } from "@/app/admin/actions";
 import AttachmentsButton from "./AttachmentsButton";
 
 export default function HistoricoFacturas() {
@@ -20,8 +20,12 @@ export default function HistoricoFacturas() {
   const [loadingPendientes, setLoadingPendientes] = useState(false);
   const [marcando, setMarcando] = useState<string | null>(null);
   const [cuentaInput, setCuentaInput] = useState<Record<string, string>>({});
-  const [cuentas, setCuentas] = useState<PaymentAccountSummary[]>([]);
+  const [cuentasLimpias, setCuentasLimpias] = useState<PaymentAccountSummary[]>([]);
+  const [cuentasCombinadas, setCuentasCombinadas] = useState<PaymentAccountSummary[]>([]);
   const [loadingCuentas, setLoadingCuentas] = useState(false);
+  const [cuentaAbierta, setCuentaAbierta] = useState<string | null>(null);
+  const [cuentaInvoices, setCuentaInvoices] = useState<AccountInvoiceRow[]>([]);
+  const [loadingCuentaInvoices, setLoadingCuentaInvoices] = useState(false);
   const [nativeTotal, setNativeTotal] = useState(0);
   const [erpTotal, setErpTotal] = useState(0);
 
@@ -42,9 +46,10 @@ export default function HistoricoFacturas() {
     }
     if (v === "cuentas") {
       setLoadingCuentas(true);
+      setCuentaAbierta(null);
       const res = await adminPaymentAccountsSummary();
       setLoadingCuentas(false);
-      if (res.ok) setCuentas(res.rows ?? []);
+      if (res.ok) { setCuentasLimpias(res.limpias ?? []); setCuentasCombinadas(res.combinadas ?? []); }
       return;
     }
     setLoading(true);
@@ -63,6 +68,15 @@ export default function HistoricoFacturas() {
   function selectYear(y: number | null) { setYear(y); load(q, y, type, vista); }
   function selectType(t: "all" | "invoice" | "credit_note") { setType(t); load(q, year, t, vista); }
   function selectVista(v: "todas" | "pagadas" | "pendientes" | "revertidas" | "cuentas") { setVista(v); load(q, year, type, v); }
+
+  async function toggleCuenta(cuenta: string) {
+    if (cuentaAbierta === cuenta) { setCuentaAbierta(null); return; }
+    setCuentaAbierta(cuenta);
+    setLoadingCuentaInvoices(true);
+    const res = await adminInvoicesByAccount(cuenta);
+    setLoadingCuentaInvoices(false);
+    if (res.ok) setCuentaInvoices(res.rows ?? []);
+  }
 
   async function marcarPagada(origen: "nueva" | "odoo", numero: string) {
     const cuenta = cuentaInput[numero];
@@ -167,21 +181,91 @@ export default function HistoricoFacturas() {
         <div className="adm-tablewrap">
           {loadingCuentas && <p>Cargando…</p>}
           {!loadingCuentas && (
-            <table className="adm-table">
-              <thead><tr><th>Cuenta</th><th className="r">Nº facturas</th><th className="r">Total</th></tr></thead>
-              <tbody>
-                {cuentas.map((c) => (
-                  <tr key={c.cuenta}>
-                    <td>{c.cuenta}</td>
-                    <td className="r">{c.count}</td>
-                    <td className="r">{euro(c.total)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          {!loadingCuentas && !cuentas.length && (
-            <p className="adm-empty">Aún no hay facturas con cuenta de pago registrada. Se rellena al marcar una factura como pagada, o al importar el dato desde Odoo.</p>
+            <>
+              <p className="lead" style={{ marginTop: 0 }}>
+                Solo cuentas de un único método de pago (importe exacto). Pulsa una fila para ver sus facturas.
+              </p>
+              <table className="adm-table">
+                <thead><tr><th>Cuenta</th><th className="r">Nº facturas</th><th className="r">Total</th></tr></thead>
+                <tbody>
+                  {cuentasLimpias.map((c) => (
+                    <Fragment key={c.cuenta}>
+                      <tr onClick={() => toggleCuenta(c.cuenta)} style={{ cursor: "pointer" }} className={cuentaAbierta === c.cuenta ? "sel" : ""}>
+                        <td>{c.cuenta} {cuentaAbierta === c.cuenta ? "▲" : "▼"}</td>
+                        <td className="r">{c.count}</td>
+                        <td className="r">{euro(c.total)}</td>
+                      </tr>
+                      {cuentaAbierta === c.cuenta && (
+                        <tr><td colSpan={3}>
+                          {loadingCuentaInvoices ? <p>Cargando…</p> : (
+                            <table className="adm-table" style={{ marginTop: 4 }}>
+                              <thead><tr><th>Número</th><th>Cliente</th><th>Fecha</th><th className="r">Total</th></tr></thead>
+                              <tbody>
+                                {cuentaInvoices.map((iv) => (
+                                  <tr key={iv.numero}>
+                                    <td className="mono">{iv.numero}</td>
+                                    <td>{iv.cliente || "—"}</td>
+                                    <td>{iv.fecha ? fdate(iv.fecha) : "—"}</td>
+                                    <td className="r">{iv.total != null ? euro(iv.total) : "—"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </td></tr>
+                      )}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
+              {!cuentasLimpias.length && (
+                <p className="adm-empty">Aún no hay facturas con cuenta de pago registrada. Se rellena al marcar una factura como pagada, o al importar el dato desde Odoo.</p>
+              )}
+
+              {cuentasCombinadas.length > 0 && (
+                <>
+                  <p className="lead" style={{ marginTop: 24, background: "#FBF3E4", padding: "8px 12px", borderRadius: 6 }}>
+                    Estas facturas se pagaron con más de un método combinado. No tenemos el importe exacto de cada
+                    parte (Odoo solo nos dio el total conciliado por factura, no desglosado por pago) — el total de
+                    cada fila de aquí abajo es el total completo de esas facturas, no la parte de cada cuenta.
+                    Pulsa una fila para ver qué facturas son.
+                  </p>
+                  <table className="adm-table">
+                    <thead><tr><th>Combinación</th><th className="r">Nº facturas</th><th className="r">Total (sin desglosar)</th></tr></thead>
+                    <tbody>
+                      {cuentasCombinadas.map((c) => (
+                        <Fragment key={c.cuenta}>
+                          <tr onClick={() => toggleCuenta(c.cuenta)} style={{ cursor: "pointer" }} className={cuentaAbierta === c.cuenta ? "sel" : ""}>
+                            <td>{c.cuenta} {cuentaAbierta === c.cuenta ? "▲" : "▼"}</td>
+                            <td className="r">{c.count}</td>
+                            <td className="r">{euro(c.total)}</td>
+                          </tr>
+                          {cuentaAbierta === c.cuenta && (
+                            <tr><td colSpan={3}>
+                              {loadingCuentaInvoices ? <p>Cargando…</p> : (
+                                <table className="adm-table" style={{ marginTop: 4 }}>
+                                  <thead><tr><th>Número</th><th>Cliente</th><th>Fecha</th><th className="r">Total</th></tr></thead>
+                                  <tbody>
+                                    {cuentaInvoices.map((iv) => (
+                                      <tr key={iv.numero}>
+                                        <td className="mono">{iv.numero}</td>
+                                        <td>{iv.cliente || "—"}</td>
+                                        <td>{iv.fecha ? fdate(iv.fecha) : "—"}</td>
+                                        <td className="r">{iv.total != null ? euro(iv.total) : "—"}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
+                            </td></tr>
+                          )}
+                        </Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
+            </>
           )}
         </div>
       ) : vista === "revertidas" ? (
