@@ -12,12 +12,13 @@ export default function HistoricoFacturas() {
   const [years, setYears] = useState<{ year: number; count: number }[]>([]);
   const [year, setYear] = useState<number | null>(null);
   const [type, setType] = useState<"all" | "invoice" | "credit_note">("all");
+  const [onlyPaid, setOnlyPaid] = useState(false);
   const [nativeTotal, setNativeTotal] = useState(0);
   const [erpTotal, setErpTotal] = useState(0);
 
-  async function load(query?: string, y?: number | null, t?: "all" | "invoice" | "credit_note") {
+  async function load(query?: string, y?: number | null, t?: "all" | "invoice" | "credit_note", paid?: boolean) {
     setLoading(true);
-    const res = await adminInvoiceHistoryList({ q: query, year: y ?? undefined, type: (t && t !== "all") ? t : undefined });
+    const res = await adminInvoiceHistoryList({ q: query, year: y ?? undefined, type: (t && t !== "all") ? t : undefined, onlyPaid: paid });
     setLoading(false);
     if (res.ok) { setRows(res.rows ?? []); setNativeTotal(res.nativeTotal ?? 0); setErpTotal(res.erpTotal ?? 0); }
   }
@@ -26,8 +27,9 @@ export default function HistoricoFacturas() {
     adminInvoiceHistoryYears().then((res) => { if (res.ok) setYears(res.years ?? []); });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function selectYear(y: number | null) { setYear(y); load(q, y, type); }
-  function selectType(t: "all" | "invoice" | "credit_note") { setType(t); load(q, year, t); }
+  function selectYear(y: number | null) { setYear(y); load(q, y, type, onlyPaid); }
+  function selectType(t: "all" | "invoice" | "credit_note") { setType(t); load(q, year, t, onlyPaid); }
+  function togglePaid() { const v = !onlyPaid; setOnlyPaid(v); load(q, year, type, v); }
 
   async function download(id: string) {
     setDownloading(id);
@@ -54,6 +56,7 @@ export default function HistoricoFacturas() {
         <button className={type === "all" ? "on" : ""} onClick={() => selectType("all")}>Todas</button>
         <button className={type === "invoice" ? "on" : ""} onClick={() => selectType("invoice")}>Facturas de venta</button>
         <button className={type === "credit_note" ? "on" : ""} onClick={() => selectType("credit_note")}>Facturas rectificativas</button>
+        <button className={onlyPaid ? "on" : ""} onClick={togglePaid}>Solo pagadas</button>
       </div>
 
       {years.length > 0 && (
@@ -71,7 +74,7 @@ export default function HistoricoFacturas() {
 
       <div className="adm-tablewrap">
         <table className="adm-table">
-          <thead><tr><th>Número</th><th>Origen</th><th>Cliente</th><th>Fecha</th><th className="r">Total</th><th>Estado</th><th /></tr></thead>
+          <thead><tr><th>Número</th><th>Origen</th><th>Cliente</th><th>Fecha</th><th className="r">Total</th><th>Estado de pago</th><th /></tr></thead>
           <tbody>
             {rows.map((r, idx) => (
               <tr key={`${r.numero}-${idx}`}>

@@ -615,10 +615,12 @@ export type InvoiceHistoryRow = {
   estado: string | null; origen: "nueva" | "odoo"; kind: "invoice" | "credit_note"; id?: string;
 };
 
-export async function adminInvoiceHistoryList(input: { q?: string; year?: number; type?: "invoice" | "credit_note"; limit?: number }): Promise<Res & { rows?: InvoiceHistoryRow[]; nativeTotal?: number; erpTotal?: number }> {
+const NATIVE_STATUS_LABEL: Record<string, string> = { issued: "Emitida", sent: "Enviada", paid: "Pagada", cancelled: "Cancelada" };
+
+export async function adminInvoiceHistoryList(input: { q?: string; year?: number; type?: "invoice" | "credit_note"; onlyPaid?: boolean; limit?: number }): Promise<Res & { rows?: InvoiceHistoryRow[]; nativeTotal?: number; erpTotal?: number }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
-  const limit = input.year ? 1000 : (input.limit ?? 200);
+  const limit = input.year || input.onlyPaid ? 2000 : (input.limit ?? 200);
   const like = input.q && input.q.trim().length >= 2 ? `%${input.q.trim()}%` : null;
   const wantInvoices = !input.type || input.type === "invoice";
   const wantCreditNotes = !input.type || input.type === "credit_note";
@@ -630,17 +632,19 @@ export async function adminInvoiceHistoryList(input: { q?: string; year?: number
       let query = supabase.from("native_invoices").select("id,numero,issue_date,customer_name,total,status", { count: "exact" }).eq("kind", "invoice").order("issue_date", { ascending: false }).limit(limit);
       if (like) query = query.or(`numero.ilike.${esc(like)},customer_name.ilike.${esc(like)}`);
       if (input.year) query = query.gte("issue_date", `${input.year}-01-01`).lt("issue_date", `${input.year + 1}-01-01`);
+      if (input.onlyPaid) query = query.eq("status", "paid");
       const { data, error, count } = await query;
       if (error) throw error;
-      return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.issue_date, cliente: i.customer_name, total: i.total, estado: i.status, origen: "nueva" as const, kind: "invoice" as const, id: i.id })), count: count ?? 0, src: "native" as const };
+      return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.issue_date, cliente: i.customer_name, total: i.total, estado: NATIVE_STATUS_LABEL[i.status] || i.status, origen: "nueva" as const, kind: "invoice" as const, id: i.id })), count: count ?? 0, src: "native" as const };
     })());
     queries.push((async () => {
-      let query = supabase.from("erp_invoices_sale").select("numero,fecha,partner,total,estado", { count: "exact" }).order("fecha", { ascending: false }).limit(limit);
+      let query = supabase.from("erp_invoices_sale").select("numero,fecha,partner,total,estado_pago", { count: "exact" }).order("fecha", { ascending: false }).limit(limit);
       if (like) query = query.or(`numero.ilike.${esc(like)},partner.ilike.${esc(like)}`);
       if (input.year) query = query.gte("fecha", `${input.year}-01-01`).lt("fecha", `${input.year + 1}-01-01`);
+      if (input.onlyPaid) query = query.eq("estado_pago", "Pagado");
       const { data, error, count } = await query;
       if (error) throw error;
-      return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.fecha, cliente: i.partner, total: i.total, estado: i.estado, origen: "odoo" as const, kind: "invoice" as const })), count: count ?? 0, src: "erp" as const };
+      return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.fecha, cliente: i.partner, total: i.total, estado: i.estado_pago, origen: "odoo" as const, kind: "invoice" as const })), count: count ?? 0, src: "erp" as const };
     })());
   }
   if (wantCreditNotes) {
@@ -648,17 +652,19 @@ export async function adminInvoiceHistoryList(input: { q?: string; year?: number
       let query = supabase.from("native_invoices").select("id,numero,issue_date,customer_name,total,status", { count: "exact" }).eq("kind", "credit_note").order("issue_date", { ascending: false }).limit(limit);
       if (like) query = query.or(`numero.ilike.${esc(like)},customer_name.ilike.${esc(like)}`);
       if (input.year) query = query.gte("issue_date", `${input.year}-01-01`).lt("issue_date", `${input.year + 1}-01-01`);
+      if (input.onlyPaid) query = query.eq("status", "paid");
       const { data, error, count } = await query;
       if (error) throw error;
-      return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.issue_date, cliente: i.customer_name, total: i.total, estado: i.status, origen: "nueva" as const, kind: "credit_note" as const, id: i.id })), count: count ?? 0, src: "native" as const };
+      return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.issue_date, cliente: i.customer_name, total: i.total, estado: NATIVE_STATUS_LABEL[i.status] || i.status, origen: "nueva" as const, kind: "credit_note" as const, id: i.id })), count: count ?? 0, src: "native" as const };
     })());
     queries.push((async () => {
-      let query = supabase.from("erp_credit_notes_sale").select("numero,fecha,partner,total,estado", { count: "exact" }).order("fecha", { ascending: false }).limit(limit);
+      let query = supabase.from("erp_credit_notes_sale").select("numero,fecha,partner,total,estado_pago", { count: "exact" }).order("fecha", { ascending: false }).limit(limit);
       if (like) query = query.or(`numero.ilike.${esc(like)},partner.ilike.${esc(like)}`);
       if (input.year) query = query.gte("fecha", `${input.year}-01-01`).lt("fecha", `${input.year + 1}-01-01`);
+      if (input.onlyPaid) query = query.eq("estado_pago", "Pagado");
       const { data, error, count } = await query;
       if (error) throw error;
-      return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.fecha, cliente: i.partner, total: i.total, estado: i.estado, origen: "odoo" as const, kind: "credit_note" as const })), count: count ?? 0, src: "erp" as const };
+      return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.fecha, cliente: i.partner, total: i.total, estado: i.estado_pago, origen: "odoo" as const, kind: "credit_note" as const })), count: count ?? 0, src: "erp" as const };
     })());
   }
 
