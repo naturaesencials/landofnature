@@ -43,11 +43,7 @@ export default function AdminPanel(p: Props) {
       </div>
 
       {tab === "resumen" && (
-        <Resumen
-          invoices={p.invoices} orders={p.orders} clients={p.clients}
-          contracts={p.contracts} commissions={p.commissions} clientOrders={p.clientOrders}
-          onGo={(t) => setTab(t)}
-        />
+        <Resumen orders={p.orders} onGo={(t) => setTab(t)} />
       )}
       {tab === "productos" && <Productos products={p.products} />}
       {tab === "inventario" && <Inventario products={p.products} warehouses={p.warehouses} levels={p.inventoryLevels} />}
