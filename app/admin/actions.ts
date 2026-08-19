@@ -636,7 +636,7 @@ export async function adminRevertedInvoicesWithCandidates(): Promise<Res & { row
     }
     // sin enlace real de Odoo: fallback a la deducción por pedido de venta compartido
     const deducidas = r.origen ? (cnByOrigen.get(r.origen) ?? []).map((c) => ({ ...c, real: false })) : [];
-    const ambiguo = !r.origen || deducidas.length > 1 || (invCountByOrigen.get(r.origen) ?? 0) > 1;
+    const ambiguo = !r.origen || deducidas.length === 0 || deducidas.length > 1 || (invCountByOrigen.get(r.origen) ?? 0) > 1;
     return { numero: r.numero, cliente: r.partner, fecha: r.fecha, total: r.total, origen: r.origen, candidatas: deducidas, ambiguo };
   });
   return { ok: true, rows };
