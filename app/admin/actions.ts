@@ -612,15 +612,21 @@ export async function adminCreateCreditNote(input: CreditNoteInput): Promise<Res
 
 export type InvoiceHistoryRow = {
   numero: string; fecha: string | null; cliente: string | null; total: number | null;
-  estado: string | null; origen: "nueva" | "odoo"; kind: "invoice" | "credit_note"; id?: string;
+  estado: string | null; estadoRaw: string | null; origen: "nueva" | "odoo"; kind: "invoice" | "credit_note"; id?: string;
 };
 
 const NATIVE_STATUS_LABEL: Record<string, string> = { issued: "Emitida", sent: "Enviada", paid: "Pagada", cancelled: "Cancelada" };
+// "En proceso de pago" se trata como pagado a efectos de negocio; "Revertido" se mantiene aparte para revisión manual.
+const ERP_PAID_STATES = ["Pagado", "En proceso de pago"];
+function displayEstadoPago(raw: string | null): string | null {
+  if (raw === "En proceso de pago") return "Pagado";
+  return raw;
+}
 
-export async function adminInvoiceHistoryList(input: { q?: string; year?: number; type?: "invoice" | "credit_note"; onlyPaid?: boolean; limit?: number }): Promise<Res & { rows?: InvoiceHistoryRow[]; nativeTotal?: number; erpTotal?: number }> {
+export async function adminInvoiceHistoryList(input: { q?: string; year?: number; type?: "invoice" | "credit_note"; onlyPaid?: boolean; onlyReverted?: boolean; limit?: number }): Promise<Res & { rows?: InvoiceHistoryRow[]; nativeTotal?: number; erpTotal?: number }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
-  const limit = input.year || input.onlyPaid ? 2000 : (input.limit ?? 200);
+  const limit = input.year || input.onlyPaid || input.onlyReverted ? 2000 : (input.limit ?? 200);
   const like = input.q && input.q.trim().length >= 2 ? `%${input.q.trim()}%` : null;
   const wantInvoices = !input.type || input.type === "invoice";
   const wantCreditNotes = !input.type || input.type === "credit_note";
@@ -633,18 +639,20 @@ export async function adminInvoiceHistoryList(input: { q?: string; year?: number
       if (like) query = query.or(`numero.ilike.${esc(like)},customer_name.ilike.${esc(like)}`);
       if (input.year) query = query.gte("issue_date", `${input.year}-01-01`).lt("issue_date", `${input.year + 1}-01-01`);
       if (input.onlyPaid) query = query.eq("status", "paid");
+      if (input.onlyReverted) return { rows: [], count: 0, src: "native" as const }; // no aplica a facturas nativas
       const { data, error, count } = await query;
       if (error) throw error;
-      return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.issue_date, cliente: i.customer_name, total: i.total, estado: NATIVE_STATUS_LABEL[i.status] || i.status, origen: "nueva" as const, kind: "invoice" as const, id: i.id })), count: count ?? 0, src: "native" as const };
+      return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.issue_date, cliente: i.customer_name, total: i.total, estado: NATIVE_STATUS_LABEL[i.status] || i.status, estadoRaw: i.status, origen: "nueva" as const, kind: "invoice" as const, id: i.id })), count: count ?? 0, src: "native" as const };
     })());
     queries.push((async () => {
       let query = supabase.from("erp_invoices_sale").select("numero,fecha,partner,total,estado_pago", { count: "exact" }).order("fecha", { ascending: false }).limit(limit);
       if (like) query = query.or(`numero.ilike.${esc(like)},partner.ilike.${esc(like)}`);
       if (input.year) query = query.gte("fecha", `${input.year}-01-01`).lt("fecha", `${input.year + 1}-01-01`);
-      if (input.onlyPaid) query = query.eq("estado_pago", "Pagado");
+      if (input.onlyPaid) query = query.in("estado_pago", ERP_PAID_STATES);
+      if (input.onlyReverted) query = query.eq("estado_pago", "Revertido");
       const { data, error, count } = await query;
       if (error) throw error;
-      return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.fecha, cliente: i.partner, total: i.total, estado: i.estado_pago, origen: "odoo" as const, kind: "invoice" as const })), count: count ?? 0, src: "erp" as const };
+      return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.fecha, cliente: i.partner, total: i.total, estado: displayEstadoPago(i.estado_pago), estadoRaw: i.estado_pago, origen: "odoo" as const, kind: "invoice" as const })), count: count ?? 0, src: "erp" as const };
     })());
   }
   if (wantCreditNotes) {
@@ -653,18 +661,20 @@ export async function adminInvoiceHistoryList(input: { q?: string; year?: number
       if (like) query = query.or(`numero.ilike.${esc(like)},customer_name.ilike.${esc(like)}`);
       if (input.year) query = query.gte("issue_date", `${input.year}-01-01`).lt("issue_date", `${input.year + 1}-01-01`);
       if (input.onlyPaid) query = query.eq("status", "paid");
+      if (input.onlyReverted) return { rows: [], count: 0, src: "native" as const };
       const { data, error, count } = await query;
       if (error) throw error;
-      return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.issue_date, cliente: i.customer_name, total: i.total, estado: NATIVE_STATUS_LABEL[i.status] || i.status, origen: "nueva" as const, kind: "credit_note" as const, id: i.id })), count: count ?? 0, src: "native" as const };
+      return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.issue_date, cliente: i.customer_name, total: i.total, estado: NATIVE_STATUS_LABEL[i.status] || i.status, estadoRaw: i.status, origen: "nueva" as const, kind: "credit_note" as const, id: i.id })), count: count ?? 0, src: "native" as const };
     })());
     queries.push((async () => {
       let query = supabase.from("erp_credit_notes_sale").select("numero,fecha,partner,total,estado_pago", { count: "exact" }).order("fecha", { ascending: false }).limit(limit);
       if (like) query = query.or(`numero.ilike.${esc(like)},partner.ilike.${esc(like)}`);
       if (input.year) query = query.gte("fecha", `${input.year}-01-01`).lt("fecha", `${input.year + 1}-01-01`);
-      if (input.onlyPaid) query = query.eq("estado_pago", "Pagado");
+      if (input.onlyPaid) query = query.in("estado_pago", ERP_PAID_STATES);
+      if (input.onlyReverted) query = query.eq("estado_pago", "Revertido");
       const { data, error, count } = await query;
       if (error) throw error;
-      return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.fecha, cliente: i.partner, total: i.total, estado: i.estado_pago, origen: "odoo" as const, kind: "credit_note" as const })), count: count ?? 0, src: "erp" as const };
+      return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.fecha, cliente: i.partner, total: i.total, estado: displayEstadoPago(i.estado_pago), estadoRaw: i.estado_pago, origen: "odoo" as const, kind: "credit_note" as const })), count: count ?? 0, src: "erp" as const };
     })());
   }
 

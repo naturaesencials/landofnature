@@ -12,13 +12,16 @@ export default function HistoricoFacturas() {
   const [years, setYears] = useState<{ year: number; count: number }[]>([]);
   const [year, setYear] = useState<number | null>(null);
   const [type, setType] = useState<"all" | "invoice" | "credit_note">("all");
-  const [onlyPaid, setOnlyPaid] = useState(false);
+  const [vista, setVista] = useState<"todas" | "pagadas" | "revertidas">("todas");
   const [nativeTotal, setNativeTotal] = useState(0);
   const [erpTotal, setErpTotal] = useState(0);
 
-  async function load(query?: string, y?: number | null, t?: "all" | "invoice" | "credit_note", paid?: boolean) {
+  async function load(query?: string, y?: number | null, t?: "all" | "invoice" | "credit_note", v?: "todas" | "pagadas" | "revertidas") {
     setLoading(true);
-    const res = await adminInvoiceHistoryList({ q: query, year: y ?? undefined, type: (t && t !== "all") ? t : undefined, onlyPaid: paid });
+    const res = await adminInvoiceHistoryList({
+      q: query, year: y ?? undefined, type: (t && t !== "all") ? t : undefined,
+      onlyPaid: v === "pagadas", onlyReverted: v === "revertidas",
+    });
     setLoading(false);
     if (res.ok) { setRows(res.rows ?? []); setNativeTotal(res.nativeTotal ?? 0); setErpTotal(res.erpTotal ?? 0); }
   }
@@ -27,9 +30,9 @@ export default function HistoricoFacturas() {
     adminInvoiceHistoryYears().then((res) => { if (res.ok) setYears(res.years ?? []); });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function selectYear(y: number | null) { setYear(y); load(q, y, type, onlyPaid); }
-  function selectType(t: "all" | "invoice" | "credit_note") { setType(t); load(q, year, t, onlyPaid); }
-  function togglePaid() { const v = !onlyPaid; setOnlyPaid(v); load(q, year, type, v); }
+  function selectYear(y: number | null) { setYear(y); load(q, y, type, vista); }
+  function selectType(t: "all" | "invoice" | "credit_note") { setType(t); load(q, year, t, vista); }
+  function selectVista(v: "todas" | "pagadas" | "revertidas") { setVista(v); load(q, year, type, v); }
 
   async function download(id: string) {
     setDownloading(id);
@@ -56,8 +59,18 @@ export default function HistoricoFacturas() {
         <button className={type === "all" ? "on" : ""} onClick={() => selectType("all")}>Todas</button>
         <button className={type === "invoice" ? "on" : ""} onClick={() => selectType("invoice")}>Facturas de venta</button>
         <button className={type === "credit_note" ? "on" : ""} onClick={() => selectType("credit_note")}>Facturas rectificativas</button>
-        <button className={onlyPaid ? "on" : ""} onClick={togglePaid}>Solo pagadas</button>
       </div>
+      <div className="adm-tabs" style={{ marginBottom: 16 }}>
+        <button className={vista === "todas" ? "on" : ""} onClick={() => selectVista("todas")}>Todas</button>
+        <button className={vista === "pagadas" ? "on" : ""} onClick={() => selectVista("pagadas")}>Solo pagadas</button>
+        <button className={vista === "revertidas" ? "on" : ""} onClick={() => selectVista("revertidas")}>Revertidas (a revisar)</button>
+      </div>
+      {vista === "revertidas" && (
+        <p className="lead" style={{ background: "#FBF3E4", padding: "8px 12px", borderRadius: 6 }}>
+          Estas facturas figuran como "Revertidas" en Odoo — el pago se anuló o se deshizo. No se cuentan como pagadas
+          automáticamente; revísalas una a una.
+        </p>
+      )}
 
       {years.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
