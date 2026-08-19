@@ -546,6 +546,46 @@ export async function adminWebCustomers(): Promise<Res & { rows?: WebCustomer[] 
 
 import { createManualInvoice, createCreditNote, type ManualInvoiceInput, type CreditNoteInput } from "@/lib/invoice";
 
+/* ---------------- KPIs reales del negocio (facturación nueva + histórico Odoo) ---------------- */
+export type RealDashboardStats = {
+  year: number;
+  ventasAnio: number; facturasAnioCount: number;
+  pendienteCobro: number; pendienteCobroCount: number;
+  revertidasCount: number;
+  pedidosActivosCount: number; pedidosActivosTotal: number;
+};
+export async function adminRealDashboardStats(): Promise<Res & { stats?: RealDashboardStats }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const year = new Date().getFullYear();
+  const yStart = `${year}-01-01`, yEnd = `${year + 1}-01-01`;
+
+  const [nativeYear, erpYear, nativePend, erpPend, erpRevert, orders] = await Promise.all([
+    supabase.from("native_invoices").select("total").eq("kind", "invoice").neq("status", "cancelled").gte("issue_date", yStart).lt("issue_date", yEnd),
+    supabase.from("erp_invoices_sale").select("total").neq("estado", "Cancelado").gte("fecha", yStart).lt("fecha", yEnd),
+    supabase.from("native_invoices").select("total").eq("kind", "invoice").in("status", ["issued", "sent"]),
+    supabase.from("erp_invoices_sale").select("total,importe_adeudado").not("estado_pago", "in", "(Pagado,En proceso de pago,Revertido,Cancelado)"),
+    supabase.from("erp_invoices_sale").select("numero", { count: "exact", head: true }).eq("estado_pago", "Revertido"),
+    supabase.from("orders").select("total,status").in("status", ["pending_payment", "paid", "confirmed", "preparing"]),
+  ]);
+
+  const ventasAnio = (nativeYear.data ?? []).reduce((s, i) => s + Number(i.total || 0), 0) + (erpYear.data ?? []).reduce((s, i) => s + Number(i.total || 0), 0);
+  const facturasAnioCount = (nativeYear.data?.length ?? 0) + (erpYear.data?.length ?? 0);
+  const pendienteCobro = (nativePend.data ?? []).reduce((s, i) => s + Number(i.total || 0), 0) + (erpPend.data ?? []).reduce((s, i) => s + Number(i.importe_adeudado ?? i.total ?? 0), 0);
+  const pendienteCobroCount = (nativePend.data?.length ?? 0) + (erpPend.data?.length ?? 0);
+
+  return {
+    ok: true,
+    stats: {
+      year, ventasAnio: Math.round(ventasAnio * 100) / 100, facturasAnioCount,
+      pendienteCobro: Math.round(pendienteCobro * 100) / 100, pendienteCobroCount,
+      revertidasCount: erpRevert.count ?? 0,
+      pedidosActivosCount: orders.data?.length ?? 0,
+      pedidosActivosTotal: Math.round((orders.data ?? []).reduce((s, o) => s + Number(o.total || 0), 0) * 100) / 100,
+    },
+  };
+}
+
 /* ---------------- Facturación manual y rectificativas ---------------- */
 
 export async function adminCreateManualInvoice(input: ManualInvoiceInput): Promise<Res & { numero?: string }> {

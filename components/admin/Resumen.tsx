@@ -1,5 +1,5 @@
 "use client";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { euro } from "@/lib/types";
 import {
   type Invoice, type Contract, type Commission,
@@ -8,6 +8,7 @@ import {
 } from "@/lib/contracts";
 import type { Order, Client, ClientOrder } from "./types";
 import { COUNTS_AS_PURCHASE, clientLabel, ORDER_STATES, fdate } from "./types";
+import { adminRealDashboardStats, type RealDashboardStats } from "@/app/admin/actions";
 
 export default function Resumen({ invoices, orders, clients, contracts, commissions, clientOrders, onGo }: {
   invoices: Invoice[]; orders: Order[]; clients: Client[]; contracts: Contract[];
@@ -16,6 +17,9 @@ export default function Resumen({ invoices, orders, clients, contracts, commissi
 }) {
   const year = new Date().getFullYear();
   const horizon = addDays(today(), 30);
+
+  const [real, setReal] = useState<RealDashboardStats | null>(null);
+  useEffect(() => { adminRealDashboardStats().then((res) => { if (res.ok) setReal(res.stats ?? null); }); }, []);
 
   const k = useMemo(() => {
     let cobrar = 0, pagar = 0, vencCobrar = 0, vencPagar = 0, gastosAnio = 0, ventasAnio = 0;
@@ -83,6 +87,17 @@ export default function Resumen({ invoices, orders, clients, contracts, commissi
 
   return (
     <div>
+      <div className="adm-dt" style={{ marginBottom: 8 }}>Negocio real (facturación nueva + histórico Odoo)</div>
+      {!real ? <p className="adm-hint">Cargando…</p> : (
+        <div className="adm-kpis" style={{ marginBottom: 24 }}>
+          <Kpi label={`Facturado ${real.year}`} value={euro(real.ventasAnio)} sub={`${real.facturasAnioCount} facturas`} tone="ok" onClick={() => onGo("facturas")} />
+          <Kpi label="Pendiente de cobro" value={euro(real.pendienteCobro)} sub={`${real.pendienteCobroCount} facturas`} tone={real.pendienteCobro > 0 ? "warn" : "ok"} onClick={() => onGo("facturas")} />
+          <Kpi label="Revertidas (a revisar)" value={String(real.revertidasCount)} sub="ver en Histórico de Facturas" tone={real.revertidasCount > 0 ? "bad" : "mute"} onClick={() => onGo("facturas")} />
+          <Kpi label="Pedidos activos" value={euro(real.pedidosActivosTotal)} sub={`${real.pedidosActivosCount} en curso`} tone="ok" onClick={() => onGo("pedidos")} />
+        </div>
+      )}
+
+      <div className="adm-dt" style={{ marginBottom: 8 }}>Cobros y pagos de contratos B2B (sistema anterior)</div>
       <div className="adm-kpis">
         <Kpi label="Pendiente de cobro" value={euro(k.cobrar)} sub={k.vencCobrar > 0 ? `${euro(k.vencCobrar)} vencido` : "sin vencidos"} tone={k.vencCobrar > 0 ? "bad" : "ok"} onClick={() => onGo("facturas")} />
         <Kpi label="Pendiente de pago" value={euro(k.pagar)} sub={k.vencPagar > 0 ? `${euro(k.vencPagar)} vencido` : "sin vencidos"} tone={k.vencPagar > 0 ? "bad" : "mute"} onClick={() => onGo("facturas")} />
