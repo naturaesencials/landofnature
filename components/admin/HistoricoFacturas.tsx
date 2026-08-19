@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { euro } from "@/lib/types";
 import { fdate } from "./types";
-import { adminInvoiceHistoryList, adminInvoicePdfUrl, adminInvoiceHistoryYears, type InvoiceHistoryRow } from "@/app/admin/actions";
+import { adminInvoiceHistoryList, adminInvoicePdfUrl, adminInvoiceHistoryYears, adminRevertedInvoicesWithCandidates, type InvoiceHistoryRow, type RevertedInvoiceRow } from "@/app/admin/actions";
 
 export default function HistoricoFacturas() {
   const [q, setQ] = useState("");
@@ -13,14 +13,23 @@ export default function HistoricoFacturas() {
   const [year, setYear] = useState<number | null>(null);
   const [type, setType] = useState<"all" | "invoice" | "credit_note">("all");
   const [vista, setVista] = useState<"todas" | "pagadas" | "revertidas">("todas");
+  const [revertidas, setRevertidas] = useState<RevertedInvoiceRow[]>([]);
+  const [loadingRevertidas, setLoadingRevertidas] = useState(false);
   const [nativeTotal, setNativeTotal] = useState(0);
   const [erpTotal, setErpTotal] = useState(0);
 
   async function load(query?: string, y?: number | null, t?: "all" | "invoice" | "credit_note", v?: "todas" | "pagadas" | "revertidas") {
+    if (v === "revertidas") {
+      setLoadingRevertidas(true);
+      const res = await adminRevertedInvoicesWithCandidates();
+      setLoadingRevertidas(false);
+      if (res.ok) setRevertidas(res.rows ?? []);
+      return;
+    }
     setLoading(true);
     const res = await adminInvoiceHistoryList({
       q: query, year: y ?? undefined, type: (t && t !== "all") ? t : undefined,
-      onlyPaid: v === "pagadas", onlyReverted: v === "revertidas",
+      onlyPaid: v === "pagadas",
     });
     setLoading(false);
     if (res.ok) { setRows(res.rows ?? []); setNativeTotal(res.nativeTotal ?? 0); setErpTotal(res.erpTotal ?? 0); }
@@ -67,12 +76,13 @@ export default function HistoricoFacturas() {
       </div>
       {vista === "revertidas" && (
         <p className="lead" style={{ background: "#FBF3E4", padding: "8px 12px", borderRadius: 6 }}>
-          Estas facturas figuran como "Revertidas" en Odoo — el pago se anuló o se deshizo. No se cuentan como pagadas
-          automáticamente; revísalas una a una.
+          Estas facturas figuran como "Revertidas" en Odoo — el pago se anuló o se deshizo. Se muestra la(s)
+          rectificativa(s) más probable(s) deducida por compartir el mismo pedido de venta (Origen). Cuando hay
+          más de una factura o rectificativa en el mismo pedido, se marca "a confirmar" — revísalo a mano.
         </p>
       )}
 
-      {years.length > 0 && (
+      {vista !== "revertidas" && years.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 16 }}>
           <button className={year === null ? "btn-sm on" : "btn-sm"} onClick={() => selectYear(null)}>
             Todos <span style={{ opacity: 0.6 }}>({years.reduce((s, y) => s + y.count, 0)})</span>
@@ -85,6 +95,36 @@ export default function HistoricoFacturas() {
         </div>
       )}
 
+      {vista === "revertidas" ? (
+        <div className="adm-tablewrap">
+          {loadingRevertidas && <p>Cargando…</p>}
+          {!loadingRevertidas && (
+            <table className="adm-table">
+              <thead><tr><th>Factura revertida</th><th>Cliente</th><th>Fecha</th><th className="r">Total</th><th>Rectificativa(s) candidata(s)</th></tr></thead>
+              <tbody>
+                {revertidas.map((r) => (
+                  <tr key={r.numero} className={r.ambiguo ? "warn" : ""}>
+                    <td className="mono">{r.numero}</td>
+                    <td>{r.cliente || "—"}</td>
+                    <td>{r.fecha ? fdate(r.fecha) : "—"}</td>
+                    <td className="r">{r.total != null ? euro(r.total) : "—"}</td>
+                    <td>
+                      {r.candidatas.length === 0 && <span style={{ color: "var(--muted)" }}>Sin candidata (sin pedido de origen registrado)</span>}
+                      {r.candidatas.map((c) => (
+                        <div key={c.numero}><code>{c.numero}</code> {c.total != null && `(${euro(c.total)})`}</div>
+                      ))}
+                      {r.ambiguo && r.candidatas.length > 0 && (
+                        <div style={{ fontSize: 11, color: "#b06a00", marginTop: 2 }}>⚠ A confirmar — varias facturas/rectificativas comparten pedido</div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {!loadingRevertidas && !revertidas.length && <p className="adm-empty">Sin facturas revertidas.</p>}
+        </div>
+      ) : (
       <div className="adm-tablewrap">
         <table className="adm-table">
           <thead><tr><th>Número</th><th>Origen</th><th>Cliente</th><th>Fecha</th><th className="r">Total</th><th>Estado de pago</th><th /></tr></thead>
@@ -121,7 +161,8 @@ export default function HistoricoFacturas() {
           </tbody>
         </table>
       </div>
-      {!loading && !rows.length && <p className="adm-empty">Sin resultados.</p>}
+      )}
+      {vista !== "revertidas" && !loading && !rows.length && <p className="adm-empty">Sin resultados.</p>}
     </div>
   );
 }

@@ -586,6 +586,44 @@ export async function adminRealDashboardStats(): Promise<Res & { stats?: RealDas
   };
 }
 
+export type RevertedInvoiceRow = {
+  numero: string; cliente: string | null; fecha: string | null; total: number | null; origen: string | null;
+  candidatas: { numero: string; total: number | null }[]; ambiguo: boolean;
+};
+export async function adminRevertedInvoicesWithCandidates(): Promise<Res & { rows?: RevertedInvoiceRow[] }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const { data: reverted, error } = await supabase.from("erp_invoices_sale")
+    .select("numero,partner,fecha,total,origen").eq("estado_pago", "Revertido").order("fecha", { ascending: false });
+  if (error) return { ok: false, error: error.message };
+
+  const origenes = Array.from(new Set((reverted ?? []).map((r) => r.origen).filter(Boolean))) as string[];
+  const [creditNotesRes, invoicesSameOrigenRes] = await Promise.all([
+    origenes.length ? supabase.from("erp_credit_notes_sale").select("numero,origen,total").in("origen", origenes) : Promise.resolve({ data: [] as { numero: string; origen: string | null; total: number | null }[] }),
+    origenes.length ? supabase.from("erp_invoices_sale").select("numero,origen").in("origen", origenes) : Promise.resolve({ data: [] as { numero: string; origen: string | null }[] }),
+  ]);
+
+  const cnByOrigen = new Map<string, { numero: string; total: number | null }[]>();
+  for (const cn of creditNotesRes.data ?? []) {
+    if (!cn.origen) continue;
+    const arr = cnByOrigen.get(cn.origen) ?? [];
+    arr.push({ numero: cn.numero, total: cn.total });
+    cnByOrigen.set(cn.origen, arr);
+  }
+  const invCountByOrigen = new Map<string, number>();
+  for (const inv of invoicesSameOrigenRes.data ?? []) {
+    if (!inv.origen) continue;
+    invCountByOrigen.set(inv.origen, (invCountByOrigen.get(inv.origen) ?? 0) + 1);
+  }
+
+  const rows: RevertedInvoiceRow[] = (reverted ?? []).map((r) => {
+    const candidatas = r.origen ? (cnByOrigen.get(r.origen) ?? []) : [];
+    const ambiguo = !r.origen || candidatas.length > 1 || (invCountByOrigen.get(r.origen) ?? 0) > 1;
+    return { numero: r.numero, cliente: r.partner, fecha: r.fecha, total: r.total, origen: r.origen, candidatas, ambiguo };
+  });
+  return { ok: true, rows };
+}
+
 /* ---------------- Facturación manual y rectificativas ---------------- */
 
 export async function adminCreateManualInvoice(input: ManualInvoiceInput): Promise<Res & { numero?: string }> {
