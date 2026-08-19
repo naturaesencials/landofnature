@@ -248,9 +248,7 @@ export default function HistoricoFacturas() {
                       {downloading === r.id ? "…" : "PDF"}
                     </button>
                   )}
-                  {r.origen === "odoo" && (
-                    <AttachmentsButton categoria={r.kind === "credit_note" ? "rectificativas" : "facturas"} referencia={r.numero} />
-                  )}
+                  <AttachmentsButton categoria={r.kind === "credit_note" ? "rectificativas" : "facturas"} referencia={r.numero} />
                 </td>
               </tr>
             ))}

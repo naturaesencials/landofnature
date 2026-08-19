@@ -603,6 +603,11 @@ export async function adminRealDashboardStats(): Promise<Res & { stats?: RealDas
 }
 
 export type ErpAttachment = { nombre_archivo: string; mimetype: string | null; tamano_bytes: number | null; storage_path: string };
+
+function safeAttachmentRef(ref: string): string {
+  return ref.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
 export async function adminErpAttachments(categoria: string, referencia: string): Promise<Res & { rows?: ErpAttachment[] }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
@@ -620,29 +625,27 @@ export async function adminErpAttachmentUrl(storagePath: string): Promise<Res & 
   return { ok: true, url: data.signedUrl };
 }
 
-/* ---------------- Adjuntos importados de Odoo (facturas, rectificativas, pedidos, productos) ---------------- */
-
-export type AttachmentRow = { id: number; nombre_archivo: string; mimetype: string | null; tamano_bytes: number | null; storage_path: string };
-
-function safeAttachmentRef(numero: string): string {
-  return numero.replace(/[^a-zA-Z0-9._-]/g, "_");
-}
-
-export async function adminAttachmentsFor(categoria: "facturas" | "rectificativas" | "pedidos" | "productos", referencia: string): Promise<Res & { rows?: AttachmentRow[] }> {
+export async function adminUploadAttachment(input: {
+  categoria: string; referencia: string; filename: string; mimetype: string; base64: string;
+}): Promise<Res> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
-  const ref = categoria === "facturas" || categoria === "rectificativas" ? safeAttachmentRef(referencia) : referencia;
-  const { data, error } = await supabase.from("erp_attachments").select("id,nombre_archivo,mimetype,tamano_bytes,storage_path").eq("categoria", categoria).eq("referencia", ref);
-  if (error) return { ok: false, error: error.message };
-  return { ok: true, rows: (data ?? []) as AttachmentRow[] };
-}
+  const safeRef = safeAttachmentRef(input.referencia);
+  const safeName = input.filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const storagePath = `${input.categoria}/${safeRef}/${Date.now()}_${safeName}`;
 
-export async function adminAttachmentSignedUrl(storagePath: string): Promise<Res & { url?: string }> {
-  const supabase = await adminClient();
-  if (!supabase) return { ok: false, error: "No autorizado." };
-  const { data, error } = await supabase.storage.from("odoo-adjuntos").createSignedUrl(storagePath, 300);
-  if (error || !data) return { ok: false, error: error?.message || "No se pudo generar el enlace." };
-  return { ok: true, url: data.signedUrl };
+  const bytes = Buffer.from(input.base64, "base64");
+  if (bytes.length > 50 * 1024 * 1024) return { ok: false, error: "El archivo supera el límite de 50 MB." };
+
+  const { error: upErr } = await supabase.storage.from("odoo-adjuntos").upload(storagePath, bytes, { contentType: input.mimetype || "application/octet-stream" });
+  if (upErr) return { ok: false, error: upErr.message };
+
+  const { error: insErr } = await supabase.from("erp_attachments").insert({
+    categoria: input.categoria, referencia: safeRef, referencia_normalizada: input.referencia,
+    nombre_archivo: input.filename, mimetype: input.mimetype || null, tamano_bytes: bytes.length, storage_path: storagePath,
+  });
+  if (insErr) return { ok: false, error: insErr.message };
+  return { ok: true };
 }
 
 /* ---------------- Pendientes de pago + marcar como pagada ---------------- */
