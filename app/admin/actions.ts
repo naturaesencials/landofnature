@@ -560,14 +560,30 @@ export async function adminRealDashboardStats(): Promise<Res & { stats?: RealDas
   const year = new Date().getFullYear();
   const yStart = `${year}-01-01`, yEnd = `${year + 1}-01-01`;
 
-  const [nativeYear, erpYear, nativePend, erpPend, erpRevert, orders] = await Promise.all([
+  const [nativeYear, erpYear, nativePend, erpPend, revertedRaw, orders] = await Promise.all([
     supabase.from("native_invoices").select("total").eq("kind", "invoice").neq("status", "cancelled").gte("issue_date", yStart).lt("issue_date", yEnd),
     supabase.from("erp_invoices_sale").select("total").neq("estado", "Cancelado").gte("fecha", yStart).lt("fecha", yEnd),
     supabase.from("native_invoices").select("total").eq("kind", "invoice").in("status", ["issued", "sent"]),
     supabase.from("erp_invoices_sale").select("total,importe_adeudado").not("estado_pago", "in", "(Pagado,En proceso de pago,Revertido,Cancelado)"),
-    supabase.from("erp_invoices_sale").select("numero", { count: "exact", head: true }).eq("estado_pago", "Revertido"),
+    supabase.from("erp_invoices_sale").select("numero,origen").eq("estado_pago", "Revertido"),
     supabase.from("orders").select("total,status").in("status", ["pending_payment", "paid", "confirmed", "preparing"]),
   ]);
+
+  // "Revertidas a revisar" reales: sin enlace confirmado de Odoo (reversed_entry_id) ni rectificativa
+  // deducible por pedido de venta compartido. El resto ya está resuelto y no necesita revisión.
+  const revertedRows = revertedRaw.data ?? [];
+  let revertidasCount = revertedRows.length;
+  if (revertedRows.length) {
+    const numeros = revertedRows.map((r) => r.numero);
+    const origenes = Array.from(new Set(revertedRows.map((r) => r.origen).filter(Boolean))) as string[];
+    const [linksRes, cnByOrigenRes] = await Promise.all([
+      supabase.from("erp_credit_note_links").select("factura_original").in("factura_original", numeros),
+      origenes.length ? supabase.from("erp_credit_notes_sale").select("origen").in("origen", origenes) : Promise.resolve({ data: [] as { origen: string | null }[] }),
+    ]);
+    const linkedNumeros = new Set((linksRes.data ?? []).map((l) => l.factura_original));
+    const origenesConNota = new Set((cnByOrigenRes.data ?? []).map((c) => c.origen));
+    revertidasCount = revertedRows.filter((r) => !linkedNumeros.has(r.numero) && !(r.origen && origenesConNota.has(r.origen))).length;
+  }
 
   const ventasAnio = (nativeYear.data ?? []).reduce((s, i) => s + Number(i.total || 0), 0) + (erpYear.data ?? []).reduce((s, i) => s + Number(i.total || 0), 0);
   const facturasAnioCount = (nativeYear.data?.length ?? 0) + (erpYear.data?.length ?? 0);
@@ -579,7 +595,7 @@ export async function adminRealDashboardStats(): Promise<Res & { stats?: RealDas
     stats: {
       year, ventasAnio: Math.round(ventasAnio * 100) / 100, facturasAnioCount,
       pendienteCobro: Math.round(pendienteCobro * 100) / 100, pendienteCobroCount,
-      revertidasCount: erpRevert.count ?? 0,
+      revertidasCount,
       pedidosActivosCount: orders.data?.length ?? 0,
       pedidosActivosTotal: Math.round((orders.data ?? []).reduce((s, o) => s + Number(o.total || 0), 0) * 100) / 100,
     },
