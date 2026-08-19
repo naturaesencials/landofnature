@@ -693,29 +693,83 @@ export type PaymentAccountSummary = { cuenta: string; count: number; total: numb
 export async function adminPaymentAccountsSummary(): Promise<Res & { limpias?: PaymentAccountSummary[]; combinadas?: PaymentAccountSummary[] }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
+
+  // Fuente exacta: pagos individuales importados de Odoo (account.payment -> reconciled_invoice_ids),
+  // que dan el importe real por cuenta incluso cuando una factura se pagó con varios métodos.
+  const { data: pagos, error: pagosErr } = await supabase.from("erp_invoice_payments").select("cuenta_pago,importe,multiple_facturas_en_pago");
+  const exactMap = new Map<string, { count: number; total: number }>();
+  const multiPago: { count: number; total: number } = { count: 0, total: 0 };
+  if (!pagosErr) {
+    for (const p of pagos ?? []) {
+      if (p.multiple_facturas_en_pago) { multiPago.count += 1; multiPago.total += Number(p.importe || 0); continue; }
+      const cur = exactMap.get(p.cuenta_pago) ?? { count: 0, total: 0 };
+      cur.count += 1; cur.total += Number(p.importe || 0);
+      exactMap.set(p.cuenta_pago, cur);
+    }
+  }
+
+  // Fallback (facturas manuales / de la web nueva) que aún no tienen pago individual importado:
+  // usan el texto libre cuenta_pago guardado al marcar "pagada" a mano.
   const [nativeRes, erpRes] = await Promise.all([
     supabase.from("native_invoices").select("cuenta_pago,total").not("cuenta_pago", "is", null),
-    supabase.from("erp_invoices_sale").select("cuenta_pago,total").not("cuenta_pago", "is", null),
+    supabase.from("erp_invoices_sale").select("numero,cuenta_pago,total").not("cuenta_pago", "is", null),
   ]);
-  const limpiasMap = new Map<string, { count: number; total: number }>();
+  const facturasConPagoExacto = new Set((pagos ?? []).map((p) => (p as { numero_factura?: string }).numero_factura));
   const combinadasMap = new Map<string, { count: number; total: number }>();
-  for (const r of [...(nativeRes.data ?? []), ...(erpRes.data ?? [])]) {
+  for (const r of nativeRes.data ?? []) {
     if (!r.cuenta_pago) continue;
     const isCombinada = r.cuenta_pago.includes(" + ");
-    const map = isCombinada ? combinadasMap : limpiasMap;
-    const cur = map.get(r.cuenta_pago) ?? { count: 0, total: 0 };
-    cur.count += 1; cur.total += Number(r.total || 0);
-    map.set(r.cuenta_pago, cur);
+    if (isCombinada) {
+      const cur = combinadasMap.get(r.cuenta_pago) ?? { count: 0, total: 0 };
+      cur.count += 1; cur.total += Number(r.total || 0);
+      combinadasMap.set(r.cuenta_pago, cur);
+    } else {
+      const cur = exactMap.get(r.cuenta_pago) ?? { count: 0, total: 0 };
+      cur.count += 1; cur.total += Number(r.total || 0);
+      exactMap.set(r.cuenta_pago, cur);
+    }
   }
+  for (const r of erpRes.data ?? []) {
+    if (!r.cuenta_pago || facturasConPagoExacto.has(r.numero)) continue; // ya contabilizada vía pago exacto
+    const isCombinada = r.cuenta_pago.includes(" + ");
+    if (isCombinada) {
+      const cur = combinadasMap.get(r.cuenta_pago) ?? { count: 0, total: 0 };
+      cur.count += 1; cur.total += Number(r.total || 0);
+      combinadasMap.set(r.cuenta_pago, cur);
+    } else {
+      const cur = exactMap.get(r.cuenta_pago) ?? { count: 0, total: 0 };
+      cur.count += 1; cur.total += Number(r.total || 0);
+      exactMap.set(r.cuenta_pago, cur);
+    }
+  }
+  if (multiPago.count > 0) combinadasMap.set("Varias facturas en un mismo pago (ver detalle)", multiPago);
+
   const toRows = (m: Map<string, { count: number; total: number }>) =>
     Array.from(m.entries()).map(([cuenta, v]) => ({ cuenta, count: v.count, total: Math.round(v.total * 100) / 100 })).sort((a, b) => b.total - a.total);
-  return { ok: true, limpias: toRows(limpiasMap), combinadas: toRows(combinadasMap) };
+  return { ok: true, limpias: toRows(exactMap), combinadas: toRows(combinadasMap) };
 }
 
-export type AccountInvoiceRow = { numero: string; cliente: string | null; fecha: string | null; total: number | null; origen: "nueva" | "odoo"; exclusiva: boolean };
+export type AccountInvoiceRow = { numero: string; cliente: string | null; fecha: string | null; total: number | null; origen: "nueva" | "odoo"; exclusiva: boolean; importePorEsteMetodo?: number | null };
 export async function adminInvoicesByAccount(cuenta: string): Promise<Res & { rows?: AccountInvoiceRow[] }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
+
+  // ¿Es una cuenta con pagos exactos importados?
+  const { data: pagos } = await supabase.from("erp_invoice_payments").select("numero_factura,importe").eq("cuenta_pago", cuenta).eq("multiple_facturas_en_pago", false);
+  if (pagos && pagos.length) {
+    const numeros = Array.from(new Set(pagos.map((p) => p.numero_factura)));
+    const { data: invs } = await supabase.from("erp_invoices_sale").select("numero,partner,fecha,total").in("numero", numeros);
+    const byNumero = new Map((invs ?? []).map((i) => [i.numero, i]));
+    const importeByNumero = new Map<string, number>();
+    for (const p of pagos) importeByNumero.set(p.numero_factura, (importeByNumero.get(p.numero_factura) ?? 0) + Number(p.importe || 0));
+    const rows: AccountInvoiceRow[] = numeros.map((numero) => {
+      const inv = byNumero.get(numero);
+      return { numero, cliente: inv?.partner ?? null, fecha: inv?.fecha ?? null, total: inv?.total ?? null, origen: "odoo" as const, exclusiva: true, importePorEsteMetodo: importeByNumero.get(numero) ?? null };
+    }).sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
+    return { ok: true, rows };
+  }
+
+  // Fallback: texto libre (facturas manuales / de la web nueva)
   const like = `%${cuenta}%`;
   const [nativeRes, erpRes] = await Promise.all([
     supabase.from("native_invoices").select("numero,customer_name,issue_date,total,cuenta_pago").ilike("cuenta_pago", esc(like)).order("issue_date", { ascending: false }),

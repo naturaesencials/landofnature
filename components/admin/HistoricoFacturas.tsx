@@ -199,7 +199,7 @@ export default function HistoricoFacturas() {
                         <tr><td colSpan={3}>
                           {loadingCuentaInvoices ? <p>Cargando…</p> : (
                             <table className="adm-table" style={{ marginTop: 4 }}>
-                              <thead><tr><th>Número</th><th>Cliente</th><th>Fecha</th><th className="r">Total</th></tr></thead>
+                              <thead><tr><th>Número</th><th>Cliente</th><th>Fecha</th><th className="r">Total factura</th><th className="r">Pagado por este medio</th></tr></thead>
                               <tbody>
                                 {cuentaInvoices.map((iv) => (
                                   <tr key={iv.numero}>
@@ -207,6 +207,7 @@ export default function HistoricoFacturas() {
                                     <td>{iv.cliente || "—"}</td>
                                     <td>{iv.fecha ? fdate(iv.fecha) : "—"}</td>
                                     <td className="r">{iv.total != null ? euro(iv.total) : "—"}</td>
+                                    <td className="r">{iv.importePorEsteMetodo != null ? euro(iv.importePorEsteMetodo) : "—"}</td>
                                   </tr>
                                 ))}
                               </tbody>
@@ -225,10 +226,9 @@ export default function HistoricoFacturas() {
               {cuentasCombinadas.length > 0 && (
                 <>
                   <p className="lead" style={{ marginTop: 24, background: "#FBF3E4", padding: "8px 12px", borderRadius: 6 }}>
-                    Estas facturas se pagaron con más de un método combinado. No tenemos el importe exacto de cada
-                    parte (Odoo solo nos dio el total conciliado por factura, no desglosado por pago) — el total de
-                    cada fila de aquí abajo es el total completo de esas facturas, no la parte de cada cuenta.
-                    Pulsa una fila para ver qué facturas son.
+                    Estas ya no incluyen las combinaciones resueltas por pago exacto (esas están arriba, con
+                    su importe real por cuenta). Lo que queda aquí son casos donde Odoo no daba un pago individual
+                    claro — el total de cada fila es el total completo de la factura, no la parte de cada cuenta.
                   </p>
                   <table className="adm-table">
                     <thead><tr><th>Combinación</th><th className="r">Nº facturas</th><th className="r">Total (sin desglosar)</th></tr></thead>
