@@ -91,7 +91,7 @@ function Productos({ products }: { products: Prod[] }) {
       </div>
       <div className="adm-tablewrap">
         <table className="adm-table">
-          <thead><tr><th>Producto</th><th>SKU</th><th className="r">Precio € (sin IVA)</th><th className="r">Stock</th><th className="c">Estado</th><th></th></tr></thead>
+          <thead><tr><th>Producto</th><th>SKU</th><th className="r">Precio € (sin IVA)</th><th className="r">Coste €</th><th className="r">Margen</th><th className="r">Stock</th><th className="c">Estado</th><th></th></tr></thead>
           <tbody>
             {filtered.map((r) => (
               <Fragment key={r.id}>
@@ -99,6 +99,12 @@ function Productos({ products }: { products: Prod[] }) {
                   <td><b>{r.brand} {r.name}</b><span className="sub">{boxLabel(r)}</span></td>
                   <td className="mono">{r.sku}</td>
                   <td className="r">{euro(r.public_price)}</td>
+                  <td className="r">{r.cost != null ? euro(r.cost) : <span style={{ color: "var(--muted)" }}>—</span>}</td>
+                  <td className="r">
+                    {r.cost != null && r.public_price > 0
+                      ? `${Math.round(((r.public_price - r.cost) / r.public_price) * 100)}%`
+                      : <span style={{ color: "var(--muted)" }}>—</span>}
+                  </td>
                   <td className="r">{r.stock}</td>
                   <td className="c">{r.archived ? "Archivado" : r.active ? "Activo" : "Oculto"}</td>
                   <td className="c"><button className="adm-link" onClick={() => setOpen(open === r.id ? null : r.id)}>{open === r.id ? "Ocultar" : "Editar"}</button></td>

@@ -2,7 +2,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { euro } from "@/lib/types";
 import { fdate } from "./types";
-import { adminInvoiceHistoryList, adminInvoicePdfUrl, adminInvoiceHistoryYears, adminRevertedInvoicesWithCandidates, adminPendingInvoices, adminMarkInvoicePaid, adminPaymentAccountsSummary, adminInvoicesByAccount, type InvoiceHistoryRow, type RevertedInvoiceRow, type PendingInvoiceRow, type PaymentAccountSummary, type AccountInvoiceRow } from "@/app/admin/actions";
+import { adminInvoiceHistoryList, adminInvoicePdfUrl, adminInvoiceHistoryYears, adminRevertedInvoicesWithCandidates, adminPendingInvoices, adminMarkInvoicePaid, adminPaymentAccountsSummary, adminInvoicesByAccount, adminInvoiceMarginList, type InvoiceHistoryRow, type RevertedInvoiceRow, type PendingInvoiceRow, type PaymentAccountSummary, type AccountInvoiceRow, type InvoiceMarginRow } from "@/app/admin/actions";
 import AttachmentsButton from "./AttachmentsButton";
 
 export default function HistoricoFacturas() {
@@ -13,7 +13,7 @@ export default function HistoricoFacturas() {
   const [years, setYears] = useState<{ year: number; count: number }[]>([]);
   const [year, setYear] = useState<number | null>(null);
   const [type, setType] = useState<"all" | "invoice" | "credit_note">("all");
-  const [vista, setVista] = useState<"todas" | "pagadas" | "pendientes" | "revertidas" | "cuentas">("todas");
+  const [vista, setVista] = useState<"todas" | "pagadas" | "pendientes" | "revertidas" | "cuentas" | "margen">("todas");
   const [revertidas, setRevertidas] = useState<RevertedInvoiceRow[]>([]);
   const [loadingRevertidas, setLoadingRevertidas] = useState(false);
   const [pendientes, setPendientes] = useState<PendingInvoiceRow[]>([]);
@@ -26,10 +26,12 @@ export default function HistoricoFacturas() {
   const [cuentaAbierta, setCuentaAbierta] = useState<string | null>(null);
   const [cuentaInvoices, setCuentaInvoices] = useState<AccountInvoiceRow[]>([]);
   const [loadingCuentaInvoices, setLoadingCuentaInvoices] = useState(false);
+  const [margenRows, setMargenRows] = useState<InvoiceMarginRow[]>([]);
+  const [loadingMargen, setLoadingMargen] = useState(false);
   const [nativeTotal, setNativeTotal] = useState(0);
   const [erpTotal, setErpTotal] = useState(0);
 
-  async function load(query?: string, y?: number | null, t?: "all" | "invoice" | "credit_note", v?: "todas" | "pagadas" | "pendientes" | "revertidas" | "cuentas") {
+  async function load(query?: string, y?: number | null, t?: "all" | "invoice" | "credit_note", v?: "todas" | "pagadas" | "pendientes" | "revertidas" | "cuentas" | "margen") {
     if (v === "revertidas") {
       setLoadingRevertidas(true);
       const res = await adminRevertedInvoicesWithCandidates();
@@ -42,6 +44,13 @@ export default function HistoricoFacturas() {
       const res = await adminPendingInvoices();
       setLoadingPendientes(false);
       if (res.ok) setPendientes(res.rows ?? []);
+      return;
+    }
+    if (v === "margen") {
+      setLoadingMargen(true);
+      const res = await adminInvoiceMarginList({ q: query, year: y ?? undefined });
+      setLoadingMargen(false);
+      if (res.ok) setMargenRows(res.rows ?? []);
       return;
     }
     if (v === "cuentas") {
@@ -67,7 +76,7 @@ export default function HistoricoFacturas() {
 
   function selectYear(y: number | null) { setYear(y); load(q, y, type, vista); }
   function selectType(t: "all" | "invoice" | "credit_note") { setType(t); load(q, year, t, vista); }
-  function selectVista(v: "todas" | "pagadas" | "pendientes" | "revertidas" | "cuentas") { setVista(v); load(q, year, type, v); }
+  function selectVista(v: "todas" | "pagadas" | "pendientes" | "revertidas" | "cuentas" | "margen") { setVista(v); load(q, year, type, v); }
 
   async function toggleCuenta(cuenta: string) {
     if (cuentaAbierta === cuenta) { setCuentaAbierta(null); return; }
@@ -120,6 +129,7 @@ export default function HistoricoFacturas() {
         <button className={vista === "pendientes" ? "on" : ""} onClick={() => selectVista("pendientes")}>Pendientes de pago</button>
         <button className={vista === "revertidas" ? "on" : ""} onClick={() => selectVista("revertidas")}>Revertidas (a revisar)</button>
         <button className={vista === "cuentas" ? "on" : ""} onClick={() => selectVista("cuentas")}>Pagos por cuenta</button>
+        <button className={vista === "margen" ? "on" : ""} onClick={() => selectVista("margen")}>Margen por factura</button>
       </div>
       {vista === "revertidas" && (
         <p className="lead" style={{ background: "#FBF3E4", padding: "8px 12px", borderRadius: 6 }}>
@@ -176,6 +186,43 @@ export default function HistoricoFacturas() {
             </table>
           )}
           {!loadingPendientes && !pendientes.length && <p className="adm-empty">Sin facturas pendientes de pago 🎉</p>}
+        </div>
+      ) : vista === "margen" ? (
+        <div className="adm-tablewrap">
+          <p className="lead" style={{ marginTop: 0 }}>
+            Coste calculado a partir del coste guardado en cada ficha de producto (cruzando por SKU) — solo para
+            el histórico de Odoo por ahora. Cuando no se conoce el coste de todas las líneas de una factura, el
+            margen mostrado es parcial (se indica cuántas líneas tienen coste sobre el total).
+          </p>
+          <form onSubmit={(e) => { e.preventDefault(); load(q, year, type, "margen"); }} style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por número o cliente" style={{ flex: 1, maxWidth: 360 }} />
+            <button className="btn" disabled={loadingMargen}>{loadingMargen ? "Buscando…" : "Buscar"}</button>
+          </form>
+          {loadingMargen && <p>Cargando…</p>}
+          {!loadingMargen && (
+            <table className="adm-table">
+              <thead><tr><th>Número</th><th>Cliente</th><th>Fecha</th><th className="r">Total</th><th className="r">Coste</th><th className="r">Margen</th><th className="r">Margen %</th><th>Cobertura</th></tr></thead>
+              <tbody>
+                {margenRows.map((r) => (
+                  <tr key={r.numero}>
+                    <td className="mono">{r.numero}</td>
+                    <td>{r.cliente || "—"}</td>
+                    <td>{r.fecha ? fdate(r.fecha) : "—"}</td>
+                    <td className="r">{r.total != null ? euro(r.total) : "—"}</td>
+                    <td className="r">{r.costo != null ? euro(r.costo) : "—"}</td>
+                    <td className="r" style={{ color: r.margen != null && r.margen < 0 ? "#b00020" : undefined }}>
+                      {r.margen != null ? euro(r.margen) : "—"}
+                    </td>
+                    <td className="r">{r.margenPct != null ? `${r.margenPct}%` : "—"}</td>
+                    <td style={{ fontSize: 11, color: r.lineasConCoste < r.lineasTotales ? "#b06a00" : "var(--muted)" }}>
+                      {r.lineasTotales > 0 ? `${r.lineasConCoste}/${r.lineasTotales} líneas` : "sin líneas"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {!loadingMargen && !margenRows.length && <p className="adm-empty">Sin resultados.</p>}
         </div>
       ) : vista === "cuentas" ? (
         <div className="adm-tablewrap">

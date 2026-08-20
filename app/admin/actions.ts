@@ -750,6 +750,47 @@ export async function adminPaymentAccountsSummary(): Promise<Res & { limpias?: P
 }
 
 export type AccountInvoiceRow = { numero: string; cliente: string | null; fecha: string | null; total: number | null; origen: "nueva" | "odoo"; exclusiva: boolean; importePorEsteMetodo?: number | null };
+/* ---------------- Margen por factura (coste vs precio de venta) ---------------- */
+
+export type InvoiceMarginRow = {
+  numero: string; cliente: string | null; fecha: string | null; total: number | null;
+  costo: number | null; margen: number | null; margenPct: number | null;
+  lineasTotales: number; lineasConCoste: number; origen: "nueva" | "odoo";
+};
+
+export async function adminInvoiceMarginList(input: { q?: string; year?: number; limit?: number }): Promise<Res & { rows?: InvoiceMarginRow[] }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const limit = input.year ? 1500 : (input.limit ?? 200);
+  const like = input.q && input.q.trim().length >= 2 ? `%${input.q.trim()}%` : null;
+
+  let query = supabase.from("erp_invoices_sale").select("numero,partner,fecha,total").order("fecha", { ascending: false }).limit(limit);
+  if (like) query = query.or(`numero.ilike.${esc(like)},partner.ilike.${esc(like)}`);
+  if (input.year) query = query.gte("fecha", `${input.year}-01-01`).lt("fecha", `${input.year + 1}-01-01`);
+  const { data: invoices, error } = await query;
+  if (error) return { ok: false, error: error.message };
+
+  const numeros = (invoices ?? []).map((i) => i.numero);
+  const { data: costs } = numeros.length
+    ? await supabase.from("erp_invoice_costs").select("numero,costo_conocido,lineas_totales,lineas_con_coste").in("numero", numeros)
+    : { data: [] as { numero: string; costo_conocido: number | null; lineas_totales: number; lineas_con_coste: number }[] };
+  const costByNumero = new Map((costs ?? []).map((c) => [c.numero, c]));
+
+  const rows: InvoiceMarginRow[] = (invoices ?? []).map((i) => {
+    const c = costByNumero.get(i.numero);
+    const costo = c?.costo_conocido ?? null;
+    const total = Number(i.total || 0);
+    const margen = costo != null ? Math.round((total - costo) * 100) / 100 : null;
+    const margenPct = costo != null && total > 0 ? Math.round(((total - costo) / total) * 1000) / 10 : null;
+    return {
+      numero: i.numero, cliente: i.partner, fecha: i.fecha, total: i.total,
+      costo: costo != null ? Math.round(costo * 100) / 100 : null, margen, margenPct,
+      lineasTotales: c?.lineas_totales ?? 0, lineasConCoste: c?.lineas_con_coste ?? 0, origen: "odoo",
+    };
+  });
+  return { ok: true, rows };
+}
+
 export async function adminInvoicesByAccount(cuenta: string): Promise<Res & { rows?: AccountInvoiceRow[] }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
