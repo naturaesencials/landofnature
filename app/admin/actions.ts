@@ -602,6 +602,33 @@ export async function adminRealDashboardStats(): Promise<Res & { stats?: RealDas
   };
 }
 
+export type YearlyRevenue = { year: number; total: number; count: number };
+export async function adminRevenueByYear(): Promise<Res & { rows?: YearlyRevenue[] }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const [nativeRes, erpRes] = await Promise.all([
+    supabase.from("native_invoices").select("issue_date,total").eq("kind", "invoice").neq("status", "cancelled"),
+    supabase.from("erp_invoices_sale").select("fecha,total").neq("estado", "Cancelado"),
+  ]);
+  const map = new Map<number, { total: number; count: number }>();
+  for (const i of nativeRes.data ?? []) {
+    if (!i.issue_date) continue;
+    const y = new Date(i.issue_date).getFullYear();
+    const cur = map.get(y) ?? { total: 0, count: 0 };
+    cur.total += Number(i.total || 0); cur.count += 1;
+    map.set(y, cur);
+  }
+  for (const i of erpRes.data ?? []) {
+    if (!i.fecha) continue;
+    const y = new Date(i.fecha).getFullYear();
+    const cur = map.get(y) ?? { total: 0, count: 0 };
+    cur.total += Number(i.total || 0); cur.count += 1;
+    map.set(y, cur);
+  }
+  const rows = Array.from(map.entries()).map(([year, v]) => ({ year, total: Math.round(v.total * 100) / 100, count: v.count })).sort((a, b) => b.year - a.year);
+  return { ok: true, rows };
+}
+
 export type ErpAttachment = { nombre_archivo: string; mimetype: string | null; tamano_bytes: number | null; storage_path: string };
 
 function safeAttachmentRef(ref: string): string {
