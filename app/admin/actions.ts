@@ -501,7 +501,7 @@ export async function adminSaleOrdersList(input: { q?: string; year?: number; li
 export async function adminSaleOrdersYears(): Promise<Res & { years?: { year: number; count: number }[] }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
-  const { data, error } = await supabase.from("erp_sale_orders").select("fecha_pedido").not("fecha_pedido", "is", null);
+  const { data, error } = await supabase.from("erp_sale_orders").select("fecha_pedido").not("fecha_pedido", "is", null).limit(20000);
   if (error) return { ok: false, error: error.message };
   const counts = new Map<number, number>();
   for (const r of data ?? []) {
@@ -565,7 +565,7 @@ export async function adminRealDashboardStats(): Promise<Res & { stats?: RealDas
     supabase.from("native_invoices").select("total").eq("kind", "invoice").neq("status", "cancelled").gte("issue_date", yStart).lt("issue_date", yEnd),
     supabase.from("erp_invoices_sale").select("total").neq("estado", "Cancelado").gte("fecha", yStart).lt("fecha", yEnd),
     supabase.from("native_invoices").select("total").eq("kind", "invoice").in("status", ["issued", "sent"]),
-    supabase.from("erp_invoices_sale").select("total,importe_adeudado").not("estado_pago", "in", "(Pagado,En proceso de pago,Revertido,Cancelado)"),
+    supabase.from("erp_invoices_sale").select("total,importe_adeudado").not("estado_pago", "in", "(Pagado,En proceso de pago,Revertido,Cancelado)").limit(20000),
     supabase.from("erp_invoices_sale").select("numero,origen").eq("estado_pago", "Revertido"),
     supabase.from("orders").select("total,status").in("status", ["pending_payment", "paid", "confirmed", "preparing"]),
   ]);
@@ -608,10 +608,10 @@ export async function adminRevenueByYear(): Promise<Res & { rows?: YearlyRevenue
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
   const [nativeInvRes, nativeCnRes, erpInvRes, erpCnRes] = await Promise.all([
-    supabase.from("native_invoices").select("issue_date,total").eq("kind", "invoice").neq("status", "cancelled"),
-    supabase.from("native_invoices").select("issue_date,total").eq("kind", "credit_note").neq("status", "cancelled"),
-    supabase.from("erp_invoices_sale").select("fecha,total").neq("estado", "Cancelado"),
-    supabase.from("erp_credit_notes_sale").select("fecha,total"),
+    supabase.from("native_invoices").select("issue_date,total").eq("kind", "invoice").neq("status", "cancelled").limit(20000),
+    supabase.from("native_invoices").select("issue_date,total").eq("kind", "credit_note").neq("status", "cancelled").limit(20000),
+    supabase.from("erp_invoices_sale").select("fecha,total").neq("estado", "Cancelado").limit(20000),
+    supabase.from("erp_credit_notes_sale").select("fecha,total").limit(20000),
   ]);
   const map = new Map<number, YearlyRevenue>();
   const get = (y: number) => {
@@ -720,9 +720,9 @@ export async function adminKnownPaymentAccounts(): Promise<Res & { accounts?: st
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
   const [a, b, c] = await Promise.all([
-    supabase.from("erp_invoice_payments").select("cuenta_pago"),
-    supabase.from("erp_invoices_sale").select("cuenta_pago").not("cuenta_pago", "is", null),
-    supabase.from("native_invoices").select("cuenta_pago").not("cuenta_pago", "is", null),
+    supabase.from("erp_invoice_payments").select("cuenta_pago").limit(20000),
+    supabase.from("erp_invoices_sale").select("cuenta_pago").not("cuenta_pago", "is", null).limit(20000),
+    supabase.from("native_invoices").select("cuenta_pago").not("cuenta_pago", "is", null).limit(20000),
   ]);
   const set = new Set<string>();
   for (const r of a.data ?? []) if (r.cuenta_pago) set.add(r.cuenta_pago);
@@ -757,7 +757,7 @@ export async function adminPaymentAccountsSummary(): Promise<Res & { limpias?: P
 
   // Fuente exacta: pagos individuales importados de Odoo (account.payment -> reconciled_invoice_ids),
   // que dan el importe real por cuenta incluso cuando una factura se pagó con varios métodos.
-  const { data: pagos, error: pagosErr } = await supabase.from("erp_invoice_payments").select("cuenta_pago,importe,multiple_facturas_en_pago");
+  const { data: pagos, error: pagosErr } = await supabase.from("erp_invoice_payments").select("cuenta_pago,importe,multiple_facturas_en_pago").limit(20000);
   const exactMap = new Map<string, { count: number; total: number }>();
   const multiPago: { count: number; total: number } = { count: 0, total: 0 };
   if (!pagosErr) {
@@ -772,8 +772,8 @@ export async function adminPaymentAccountsSummary(): Promise<Res & { limpias?: P
   // Fallback (facturas manuales / de la web nueva) que aún no tienen pago individual importado:
   // usan el texto libre cuenta_pago guardado al marcar "pagada" a mano.
   const [nativeRes, erpRes] = await Promise.all([
-    supabase.from("native_invoices").select("cuenta_pago,total").not("cuenta_pago", "is", null),
-    supabase.from("erp_invoices_sale").select("numero,cuenta_pago,total").not("cuenta_pago", "is", null),
+    supabase.from("native_invoices").select("cuenta_pago,total").not("cuenta_pago", "is", null).limit(20000),
+    supabase.from("erp_invoices_sale").select("numero,cuenta_pago,total").not("cuenta_pago", "is", null).limit(20000),
   ]);
   const facturasConPagoExacto = new Set((pagos ?? []).map((p) => (p as { numero_factura?: string }).numero_factura));
   const combinadasMap = new Map<string, { count: number; total: number }>();
@@ -1088,9 +1088,9 @@ export async function adminInvoiceHistoryYears(): Promise<Res & { years?: { year
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
   const [a, b, c] = await Promise.all([
-    supabase.from("native_invoices").select("issue_date"),
-    supabase.from("erp_invoices_sale").select("fecha").not("fecha", "is", null),
-    supabase.from("erp_credit_notes_sale").select("fecha").not("fecha", "is", null),
+    supabase.from("native_invoices").select("issue_date").limit(20000),
+    supabase.from("erp_invoices_sale").select("fecha").not("fecha", "is", null).limit(20000),
+    supabase.from("erp_credit_notes_sale").select("fecha").not("fecha", "is", null).limit(20000),
   ]);
   const counts = new Map<number, number>();
   for (const src of [a, b, c]) {
@@ -1180,7 +1180,7 @@ export async function adminPartnerInvoices(name: string, kind: "cliente" | "prov
 export async function adminErpProductionOrdersYears(): Promise<Res & { years?: { year: number; count: number }[] }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
-  const { data, error } = await supabase.from("erp_production_orders").select("fecha_final").not("fecha_final", "is", null);
+  const { data, error } = await supabase.from("erp_production_orders").select("fecha_final").not("fecha_final", "is", null).limit(20000);
   if (error) return { ok: false, error: error.message };
   const counts = new Map<number, number>();
   for (const r of data ?? []) { const y = new Date(r.fecha_final as string).getFullYear(); counts.set(y, (counts.get(y) ?? 0) + 1); }
