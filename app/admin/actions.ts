@@ -603,30 +603,46 @@ export async function adminRealDashboardStats(): Promise<Res & { stats?: RealDas
   };
 }
 
-export type YearlyRevenue = { year: number; total: number; count: number };
+export type YearlyRevenue = { year: number; bruto: number; rectificativas: number; neto: number; countFacturas: number; countRectificativas: number };
 export async function adminRevenueByYear(): Promise<Res & { rows?: YearlyRevenue[] }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
-  const [nativeRes, erpRes] = await Promise.all([
+  const [nativeInvRes, nativeCnRes, erpInvRes, erpCnRes] = await Promise.all([
     supabase.from("native_invoices").select("issue_date,total").eq("kind", "invoice").neq("status", "cancelled"),
+    supabase.from("native_invoices").select("issue_date,total").eq("kind", "credit_note").neq("status", "cancelled"),
     supabase.from("erp_invoices_sale").select("fecha,total").neq("estado", "Cancelado"),
+    supabase.from("erp_credit_notes_sale").select("fecha,total"),
   ]);
-  const map = new Map<number, { total: number; count: number }>();
-  for (const i of nativeRes.data ?? []) {
+  const map = new Map<number, YearlyRevenue>();
+  const get = (y: number) => {
+    let v = map.get(y);
+    if (!v) { v = { year: y, bruto: 0, rectificativas: 0, neto: 0, countFacturas: 0, countRectificativas: 0 }; map.set(y, v); }
+    return v;
+  };
+  for (const i of nativeInvRes.data ?? []) {
     if (!i.issue_date) continue;
-    const y = new Date(i.issue_date).getFullYear();
-    const cur = map.get(y) ?? { total: 0, count: 0 };
-    cur.total += Number(i.total || 0); cur.count += 1;
-    map.set(y, cur);
+    const v = get(new Date(i.issue_date).getFullYear());
+    v.bruto += Number(i.total || 0); v.countFacturas += 1;
   }
-  for (const i of erpRes.data ?? []) {
+  for (const i of erpInvRes.data ?? []) {
     if (!i.fecha) continue;
-    const y = new Date(i.fecha).getFullYear();
-    const cur = map.get(y) ?? { total: 0, count: 0 };
-    cur.total += Number(i.total || 0); cur.count += 1;
-    map.set(y, cur);
+    const v = get(new Date(i.fecha).getFullYear());
+    v.bruto += Number(i.total || 0); v.countFacturas += 1;
   }
-  const rows = Array.from(map.entries()).map(([year, v]) => ({ year, total: Math.round(v.total * 100) / 100, count: v.count })).sort((a, b) => b.year - a.year);
+  for (const i of nativeCnRes.data ?? []) {
+    if (!i.issue_date) continue;
+    const v = get(new Date(i.issue_date).getFullYear());
+    v.rectificativas += Math.abs(Number(i.total || 0)); v.countRectificativas += 1;
+  }
+  for (const i of erpCnRes.data ?? []) {
+    if (!i.fecha) continue;
+    const v = get(new Date(i.fecha).getFullYear());
+    v.rectificativas += Math.abs(Number(i.total || 0)); v.countRectificativas += 1;
+  }
+  const rows = Array.from(map.values()).map((v) => ({
+    ...v, bruto: Math.round(v.bruto * 100) / 100, rectificativas: Math.round(v.rectificativas * 100) / 100,
+    neto: Math.round((v.bruto - v.rectificativas) * 100) / 100,
+  })).sort((a, b) => b.year - a.year);
   return { ok: true, rows };
 }
 

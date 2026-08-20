@@ -37,20 +37,24 @@ export default function Resumen({ orders, onGo }: {
       {!porAnio ? <p className="adm-hint">Cargando…</p> : (
         <div className="adm-tablewrap" style={{ marginBottom: 24 }}>
           <table className="adm-table">
-            <thead><tr><th>Año</th><th className="r">Nº facturas</th><th className="r">Total facturado</th></tr></thead>
+            <thead><tr><th>Año</th><th className="r">Facturas</th><th className="r">Bruto</th><th className="r">Rectificativas</th><th className="r">Neto</th></tr></thead>
             <tbody>
               {porAnio.map((r) => (
                 <tr key={r.year}>
                   <td>{r.year}</td>
-                  <td className="r">{r.count}</td>
-                  <td className="r"><b>{euro(r.total)}</b></td>
+                  <td className="r">{r.countFacturas}{r.countRectificativas > 0 && <span style={{ color: "var(--muted)" }}> (-{r.countRectificativas})</span>}</td>
+                  <td className="r">{euro(r.bruto)}</td>
+                  <td className="r">{r.rectificativas > 0 ? <span style={{ color: "#b06a00" }}>-{euro(r.rectificativas)}</span> : "—"}</td>
+                  <td className="r"><b>{euro(r.neto)}</b></td>
                 </tr>
               ))}
               {porAnio.length > 0 && (
                 <tr style={{ borderTop: "2px solid var(--line)" }}>
                   <td><b>Total</b></td>
-                  <td className="r"><b>{porAnio.reduce((s, r) => s + r.count, 0)}</b></td>
-                  <td className="r"><b>{euro(porAnio.reduce((s, r) => s + r.total, 0))}</b></td>
+                  <td className="r"><b>{porAnio.reduce((s, r) => s + r.countFacturas, 0)}</b></td>
+                  <td className="r"><b>{euro(porAnio.reduce((s, r) => s + r.bruto, 0))}</b></td>
+                  <td className="r"><b>-{euro(porAnio.reduce((s, r) => s + r.rectificativas, 0))}</b></td>
+                  <td className="r"><b>{euro(porAnio.reduce((s, r) => s + r.neto, 0))}</b></td>
                 </tr>
               )}
             </tbody>
