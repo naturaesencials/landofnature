@@ -2,7 +2,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { euro } from "@/lib/types";
 import { fdate } from "./types";
-import { adminInvoiceHistoryList, adminInvoicePdfUrl, adminInvoiceHistoryYears, adminRevertedInvoicesWithCandidates, adminPendingInvoices, adminMarkInvoicePaid, adminPaymentAccountsSummary, adminInvoicesByAccount, adminInvoiceMarginList, type InvoiceHistoryRow, type RevertedInvoiceRow, type PendingInvoiceRow, type PaymentAccountSummary, type AccountInvoiceRow, type InvoiceMarginRow } from "@/app/admin/actions";
+import { adminInvoiceHistoryList, adminInvoicePdfUrl, adminInvoiceHistoryYears, adminRevertedInvoicesWithCandidates, adminPendingInvoices, adminMarkInvoicePaid, adminPaymentAccountsSummary, adminInvoicesByAccount, adminInvoiceMarginList, adminKnownPaymentAccounts, type InvoiceHistoryRow, type RevertedInvoiceRow, type PendingInvoiceRow, type PaymentAccountSummary, type AccountInvoiceRow, type InvoiceMarginRow } from "@/app/admin/actions";
 import AttachmentsButton from "./AttachmentsButton";
 
 export default function HistoricoFacturas() {
@@ -20,6 +20,8 @@ export default function HistoricoFacturas() {
   const [loadingPendientes, setLoadingPendientes] = useState(false);
   const [marcando, setMarcando] = useState<string | null>(null);
   const [cuentaInput, setCuentaInput] = useState<Record<string, string>>({});
+  const [fechaInput, setFechaInput] = useState<Record<string, string>>({});
+  const [cuentasConocidas, setCuentasConocidas] = useState<string[]>([]);
   const [cuentasLimpias, setCuentasLimpias] = useState<PaymentAccountSummary[]>([]);
   const [cuentasCombinadas, setCuentasCombinadas] = useState<PaymentAccountSummary[]>([]);
   const [loadingCuentas, setLoadingCuentas] = useState(false);
@@ -72,6 +74,7 @@ export default function HistoricoFacturas() {
   useEffect(() => {
     load();
     adminInvoiceHistoryYears().then((res) => { if (res.ok) setYears(res.years ?? []); });
+    adminKnownPaymentAccounts().then((res) => { if (res.ok) setCuentasConocidas(res.accounts ?? []); });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function selectYear(y: number | null) { setYear(y); load(q, y, type, vista); }
@@ -90,11 +93,13 @@ export default function HistoricoFacturas() {
   async function marcarPagada(origen: "nueva" | "odoo", numero: string) {
     const cuenta = cuentaInput[numero];
     if (!cuenta || !cuenta.trim()) { alert("Indica desde qué cuenta se ha pagado."); return; }
+    const fecha = fechaInput[numero] || new Date().toISOString().slice(0, 10);
     setMarcando(numero);
-    const res = await adminMarkInvoicePaid({ origen, numero, cuentaPago: cuenta });
+    const res = await adminMarkInvoicePaid({ origen, numero, cuentaPago: cuenta, fechaPago: fecha });
     setMarcando(null);
     if (!res.ok) { alert(res.error || "No se pudo marcar como pagada."); return; }
     setPendientes((rs) => rs.filter((r) => r.numero !== numero));
+    if (!cuentasConocidas.includes(cuenta.trim())) setCuentasConocidas((cs) => [...cs, cuenta.trim()].sort());
   }
 
   async function download(id: string) {
@@ -154,13 +159,16 @@ export default function HistoricoFacturas() {
 
       {vista === "pendientes" ? (
         <div className="adm-tablewrap">
+          <datalist id="cuentas-conocidas">
+            {cuentasConocidas.map((c) => <option key={c} value={c} />)}
+          </datalist>
           {loadingPendientes && <p>Cargando…</p>}
           {!loadingPendientes && (
             <table className="adm-table">
-              <thead><tr><th>Número</th><th>Origen</th><th>Cliente</th><th>Fecha</th><th className="r">Total</th><th>Estado</th><th>Marcar pagada</th></tr></thead>
+              <thead><tr><th>Número</th><th>Origen</th><th>Cliente</th><th>Fecha</th><th className="r">Total</th><th>Estado</th><th>Vencimiento</th><th>Marcar pagada</th></tr></thead>
               <tbody>
                 {pendientes.map((r) => (
-                  <tr key={r.numero}>
+                  <tr key={r.numero} className={r.vencida ? "warn" : ""}>
                     <td className="mono">{r.numero}</td>
                     <td>{r.origen === "nueva" ? "Nueva" : "Odoo (histórico)"}</td>
                     <td>{r.cliente || "—"}</td>
@@ -168,12 +176,23 @@ export default function HistoricoFacturas() {
                     <td className="r">{r.total != null ? euro(r.total) : "—"}</td>
                     <td>{r.estado || "—"}</td>
                     <td>
-                      <div style={{ display: "flex", gap: 6 }}>
+                      {r.vencimiento ? fdate(r.vencimiento) : "—"}
+                      {r.vencida && <div style={{ fontSize: 11, color: "#b00020" }}>⚠ vencida</div>}
+                    </td>
+                    <td>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                         <input
+                          list="cuentas-conocidas"
                           placeholder="Cuenta desde la que se pagó"
                           value={cuentaInput[r.numero] || ""}
                           onChange={(e) => setCuentaInput((s) => ({ ...s, [r.numero]: e.target.value }))}
                           style={{ fontSize: 12, padding: "4px 6px", width: 160 }}
+                        />
+                        <input
+                          type="date"
+                          value={fechaInput[r.numero] || new Date().toISOString().slice(0, 10)}
+                          onChange={(e) => setFechaInput((s) => ({ ...s, [r.numero]: e.target.value }))}
+                          style={{ fontSize: 12, padding: "4px 6px" }}
                         />
                         <button className="btn-sm" disabled={marcando === r.numero} onClick={() => marcarPagada(r.origen, r.numero)}>
                           {marcando === r.numero ? "…" : "Marcar pagada"}
@@ -366,6 +385,10 @@ export default function HistoricoFacturas() {
                 <td className="r">{r.total != null ? euro(r.total) : "—"}</td>
                 <td>
                   {r.estado || "—"}
+                  {r.fechaPago && <div style={{ fontSize: 11, color: "var(--muted)" }}>Pagada el {fdate(r.fechaPago)}</div>}
+                  {!r.fechaPago && r.fechaVencimiento && r.fechaVencimiento < new Date().toISOString() && r.estadoRaw !== "Pagado" && r.estadoRaw !== "En proceso de pago" && (
+                    <div style={{ fontSize: 11, color: "#b00020" }}>⚠ venció el {fdate(r.fechaVencimiento)}</div>
+                  )}
                   {r.importeAdeudado != null && (
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
                       Pagado: {euro(r.importePagado ?? 0)} · Adeudado: <b style={{ color: "#b06a00" }}>{euro(r.importeAdeudado)}</b>

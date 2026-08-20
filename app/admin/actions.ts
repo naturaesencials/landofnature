@@ -680,36 +680,53 @@ export async function adminUploadAttachment(input: {
 
 export type PendingInvoiceRow = {
   numero: string; cliente: string | null; fecha: string | null; total: number | null;
-  estado: string | null; origen: "nueva" | "odoo"; id?: string;
+  estado: string | null; origen: "nueva" | "odoo"; id?: string; vencimiento: string | null; vencida: boolean;
 };
 export async function adminPendingInvoices(): Promise<Res & { rows?: PendingInvoiceRow[] }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
+  const today = new Date().toISOString();
   const [nativeRes, erpRes] = await Promise.all([
     supabase.from("native_invoices").select("id,numero,issue_date,customer_name,total,status").eq("kind", "invoice").in("status", ["issued", "sent"]).order("issue_date", { ascending: false }),
-    supabase.from("erp_invoices_sale").select("numero,fecha,partner,total,estado_pago")
+    supabase.from("erp_invoices_sale").select("numero,fecha,partner,total,estado_pago,fecha_vencimiento")
       .not("estado_pago", "in", "(Pagado,En proceso de pago,Revertido,Cancelado)").order("fecha", { ascending: false }),
   ]);
   if (nativeRes.error) return { ok: false, error: nativeRes.error.message };
   if (erpRes.error) return { ok: false, error: erpRes.error.message };
   const rows: PendingInvoiceRow[] = [
-    ...(nativeRes.data ?? []).map((i) => ({ numero: i.numero, cliente: i.customer_name, fecha: i.issue_date, total: i.total, estado: i.status, origen: "nueva" as const, id: i.id })),
-    ...(erpRes.data ?? []).map((i) => ({ numero: i.numero, cliente: i.partner, fecha: i.fecha, total: i.total, estado: i.estado_pago, origen: "odoo" as const })),
+    ...(nativeRes.data ?? []).map((i) => ({ numero: i.numero, cliente: i.customer_name, fecha: i.issue_date, total: i.total, estado: i.status, origen: "nueva" as const, id: i.id, vencimiento: null, vencida: false })),
+    ...(erpRes.data ?? []).map((i) => ({ numero: i.numero, cliente: i.partner, fecha: i.fecha, total: i.total, estado: i.estado_pago, origen: "odoo" as const, vencimiento: i.fecha_vencimiento, vencida: !!i.fecha_vencimiento && i.fecha_vencimiento < today })),
   ].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
   return { ok: true, rows };
 }
 
-export async function adminMarkInvoicePaid(input: { origen: "nueva" | "odoo"; numero: string; cuentaPago: string }): Promise<Res> {
+export async function adminKnownPaymentAccounts(): Promise<Res & { accounts?: string[] }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const [a, b, c] = await Promise.all([
+    supabase.from("erp_invoice_payments").select("cuenta_pago"),
+    supabase.from("erp_invoices_sale").select("cuenta_pago").not("cuenta_pago", "is", null),
+    supabase.from("native_invoices").select("cuenta_pago").not("cuenta_pago", "is", null),
+  ]);
+  const set = new Set<string>();
+  for (const r of a.data ?? []) if (r.cuenta_pago) set.add(r.cuenta_pago);
+  for (const r of b.data ?? []) if (r.cuenta_pago) set.add(r.cuenta_pago);
+  for (const r of c.data ?? []) if (r.cuenta_pago) set.add(r.cuenta_pago);
+  return { ok: true, accounts: Array.from(set).sort() };
+}
+
+export async function adminMarkInvoicePaid(input: { origen: "nueva" | "odoo"; numero: string; cuentaPago: string; fechaPago: string }): Promise<Res> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
   if (!input.cuentaPago.trim()) return { ok: false, error: "Indica desde qué cuenta se ha pagado." };
+  if (!input.fechaPago) return { ok: false, error: "Indica la fecha de pago." };
   if (input.origen === "nueva") {
-    const { error } = await supabase.from("native_invoices").update({ status: "paid", cuenta_pago: input.cuentaPago.trim() }).eq("numero", input.numero);
+    const { error } = await supabase.from("native_invoices").update({ status: "paid", cuenta_pago: input.cuentaPago.trim(), fecha_pago: input.fechaPago }).eq("numero", input.numero);
     if (error) return { ok: false, error: error.message };
   } else {
     const { data: inv } = await supabase.from("erp_invoices_sale").select("total").eq("numero", input.numero).maybeSingle();
     const { error } = await supabase.from("erp_invoices_sale").update({
-      estado_pago: "Pagado", cuenta_pago: input.cuentaPago.trim(),
+      estado_pago: "Pagado", cuenta_pago: input.cuentaPago.trim(), fecha_pago: input.fechaPago,
       importe_pagado: inv?.total ?? null, importe_adeudado: null,
     }).eq("numero", input.numero);
     if (error) return { ok: false, error: error.message };
@@ -975,6 +992,7 @@ export type InvoiceHistoryRow = {
   numero: string; fecha: string | null; cliente: string | null; total: number | null;
   estado: string | null; estadoRaw: string | null; origen: "nueva" | "odoo"; kind: "invoice" | "credit_note"; id?: string;
   importePagado?: number | null; importeAdeudado?: number | null; notaPago?: string | null;
+  fechaPago?: string | null; fechaVencimiento?: string | null;
 };
 
 const NATIVE_STATUS_LABEL: Record<string, string> = { issued: "Emitida", sent: "Enviada", paid: "Pagada", cancelled: "Cancelada" };
@@ -1007,14 +1025,14 @@ export async function adminInvoiceHistoryList(input: { q?: string; year?: number
       return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.issue_date, cliente: i.customer_name, total: i.total, estado: NATIVE_STATUS_LABEL[i.status] || i.status, estadoRaw: i.status, origen: "nueva" as const, kind: "invoice" as const, id: i.id })), count: count ?? 0, src: "native" as const };
     })());
     queries.push((async () => {
-      let query = supabase.from("erp_invoices_sale").select("numero,fecha,partner,total,estado_pago,importe_pagado,importe_adeudado,nota_pago", { count: "exact" }).order("fecha", { ascending: false }).limit(limit);
+      let query = supabase.from("erp_invoices_sale").select("numero,fecha,partner,total,estado_pago,importe_pagado,importe_adeudado,nota_pago,fecha_pago,fecha_vencimiento", { count: "exact" }).order("fecha", { ascending: false }).limit(limit);
       if (like) query = query.or(`numero.ilike.${esc(like)},partner.ilike.${esc(like)}`);
       if (input.year) query = query.gte("fecha", `${input.year}-01-01`).lt("fecha", `${input.year + 1}-01-01`);
       if (input.onlyPaid) query = query.in("estado_pago", ERP_PAID_STATES);
       if (input.onlyReverted) query = query.eq("estado_pago", "Revertido");
       const { data, error, count } = await query;
       if (error) throw error;
-      return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.fecha, cliente: i.partner, total: i.total, estado: displayEstadoPago(i.estado_pago), estadoRaw: i.estado_pago, origen: "odoo" as const, kind: "invoice" as const, importePagado: i.importe_pagado, importeAdeudado: i.importe_adeudado, notaPago: i.nota_pago })), count: count ?? 0, src: "erp" as const };
+      return { rows: (data ?? []).map((i) => ({ numero: i.numero, fecha: i.fecha, cliente: i.partner, total: i.total, estado: displayEstadoPago(i.estado_pago), estadoRaw: i.estado_pago, origen: "odoo" as const, kind: "invoice" as const, importePagado: i.importe_pagado, importeAdeudado: i.importe_adeudado, notaPago: i.nota_pago, fechaPago: i.fecha_pago, fechaVencimiento: i.fecha_vencimiento })), count: count ?? 0, src: "erp" as const };
     })());
   }
   if (wantCreditNotes) {
