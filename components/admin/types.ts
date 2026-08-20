@@ -4,7 +4,7 @@ export type Prod = {
   family: string | null; category: string; barcode?: string | null; image_url?: string | null;
   description?: string | null; inci?: string | null; inci_verified?: boolean;
   vat_rate?: number; weight_kg?: number | null; low_stock_threshold?: number; cost?: number | null;
-  archived?: boolean;
+  archived?: boolean; cost_estimated?: boolean;
 };
 
 export type Warehouse = { id: string; name: string; sort: number };

@@ -99,7 +99,14 @@ function Productos({ products }: { products: Prod[] }) {
                   <td><b>{r.brand} {r.name}</b><span className="sub">{boxLabel(r)}</span></td>
                   <td className="mono">{r.sku}</td>
                   <td className="r">{euro(r.public_price)}</td>
-                  <td className="r">{r.cost != null ? euro(r.cost) : <span style={{ color: "var(--muted)" }}>—</span>}</td>
+                  <td className="r">
+                    {r.cost != null ? (
+                      <>
+                        {euro(r.cost)}
+                        {r.cost_estimated && <span style={{ fontSize: 10, color: "var(--muted)" }}> (estimado)</span>}
+                      </>
+                    ) : <span style={{ color: "var(--muted)" }}>—</span>}
+                  </td>
                   <td className="r">
                     {r.cost != null && r.public_price > 0
                       ? `${Math.round(((r.public_price - r.cost) / r.public_price) * 100)}%`
@@ -148,6 +155,7 @@ function ProductoDetalle({ product, onSaved, onCancel }: { product: Prod; onSave
       weight_kg: f.weight_kg.trim() ? num(f.weight_kg) : null,
       low_stock_threshold: parseInt(f.low_stock_threshold) || 20, active: f.active, image_url: f.image_url || null,
       cost: f.cost.trim() ? num(f.cost) : null, archived: f.archived,
+      costEstimated: f.cost.trim() && num(f.cost) === product.cost ? (product.cost_estimated ?? false) : false,
     });
     setBusy(false);
     if (!res.ok) { setErr(res.error || "Error"); return; }
@@ -160,6 +168,7 @@ function ProductoDetalle({ product, onSaved, onCancel }: { product: Prod; onSave
       weight_kg: f.weight_kg.trim() ? num(f.weight_kg) : null,
       low_stock_threshold: parseInt(f.low_stock_threshold) || 20, active: f.active, image_url: f.image_url || null,
       cost: f.cost.trim() ? num(f.cost) : null, archived: f.archived,
+      cost_estimated: f.cost.trim() && num(f.cost) === product.cost ? (product.cost_estimated ?? false) : false,
     });
   }
 
@@ -176,7 +185,9 @@ function ProductoDetalle({ product, onSaved, onCancel }: { product: Prod; onSave
       <label>Slug (URL)<input className="adm-input mono" value={f.slug} onChange={(e) => set({ slug: e.target.value })} /></label>
       <label>Imagen (URL)<input className="adm-input" value={f.image_url} onChange={(e) => set({ image_url: e.target.value })} /></label>
       <label>Precio € (sin IVA)<input className="adm-input" inputMode="decimal" value={f.public_price} onChange={(e) => set({ public_price: e.target.value })} /></label>
-      <label>Coste € (sin IVA)<input className="adm-input" inputMode="decimal" placeholder="Pendiente de recibir" value={f.cost} onChange={(e) => set({ cost: e.target.value })} /></label>
+      <label>Coste € (sin IVA){product.cost_estimated && f.cost === String(product.cost ?? "") && <span style={{ color: "#b06a00", fontWeight: 400 }}> — estimado a partir de tarifa T1, no es un coste real</span>}
+        <input className="adm-input" inputMode="decimal" placeholder="Pendiente de recibir" value={f.cost} onChange={(e) => set({ cost: e.target.value })} />
+      </label>
       <label>IVA (ej. 0,21)<input className="adm-input" inputMode="decimal" value={f.vat_rate} onChange={(e) => set({ vat_rate: e.target.value })} /></label>
       <label>Peso (kg)<input className="adm-input" inputMode="decimal" value={f.weight_kg} onChange={(e) => set({ weight_kg: e.target.value })} /></label>
       <label>Umbral de stock bajo<input className="adm-input" inputMode="numeric" value={f.low_stock_threshold} onChange={(e) => set({ low_stock_threshold: e.target.value })} /></label>
