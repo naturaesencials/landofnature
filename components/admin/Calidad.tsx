@@ -2,8 +2,8 @@
 import { Fragment, useEffect, useState } from "react";
 import { fdate } from "./types";
 import {
-  adminQualityStats, adminQualityAlerts, adminQualityChecksSearch, adminQualityPoints, adminExpiringLots,
-  type QualityStats, type QualityAlertRow, type QualityCheckRow, type QualityPointRow, type ExpiringLotRow,
+  adminQualityStats, adminQualityAlerts, adminQualityChecksSearch, adminQualityPoints, adminExpiringLots, adminChecksByPoint, adminErpLoteDetail,
+  type QualityStats, type QualityAlertRow, type QualityCheckRow, type QualityPointRow, type ExpiringLotRow, type ErpLoteDetail,
 } from "@/app/admin/actions";
 
 export default function Calidad() {
@@ -185,6 +185,9 @@ function Caducidades() {
   const [rows, setRows] = useState<ExpiringLotRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [onlyExpired, setOnlyExpired] = useState(false);
+  const [open, setOpen] = useState<string | null>(null);
+  const [detail, setDetail] = useState<ErpLoteDetail | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
 
   async function load(exp: boolean) {
     setLoading(true);
@@ -194,28 +197,89 @@ function Caducidades() {
   }
   useEffect(() => { load(false); }, []);
 
+  async function toggle(l: ExpiringLotRow) {
+    const key = `${l.lote}|${l.product_code}`;
+    if (open === key) { setOpen(null); return; }
+    setOpen(key); setDetail(null); setLoadingDetail(true);
+    const res = await adminErpLoteDetail(l.lote, l.product_code || undefined);
+    setLoadingDetail(false);
+    if (res.ok) setDetail(res.detail ?? null);
+  }
+
   return (
     <div>
       <div className="adm-tabs" style={{ marginBottom: 16 }}>
-        <button className={!onlyExpired ? "on" : ""} onClick={() => { setOnlyExpired(false); load(false); }}>Próximas 60 días</button>
-        <button className={onlyExpired ? "on" : ""} onClick={() => { setOnlyExpired(true); load(true); }}>Ya vencidas</button>
+        <button className={!onlyExpired ? "on" : ""} onClick={() => { setOnlyExpired(false); setOpen(null); load(false); }}>Próximas 60 días</button>
+        <button className={onlyExpired ? "on" : ""} onClick={() => { setOnlyExpired(true); setOpen(null); load(true); }}>Ya vencidas</button>
       </div>
+      <p className="lead" style={{ marginTop: 0, fontSize: 12 }}>Pulsa un lote para ver su informe completo: controles de calidad, alertas, orden de fabricación y a quién se vendió.</p>
       {loading && <p>Cargando…</p>}
       {!loading && (
         <table className="adm-table">
-          <thead><tr><th>Lote</th><th>Producto</th><th className="r">Cantidad</th><th>Ubicación</th><th>Caducidad</th></tr></thead>
+          <thead><tr><th>Lote</th><th>Producto</th><th className="r">Cantidad</th><th>Ubicación</th><th>Caducidad</th><th /></tr></thead>
           <tbody>
-            {rows.map((l, i) => (
-              <tr key={`${l.lote}-${i}`} className={l.vencido ? "warn" : ""}>
-                <td className="mono">{l.lote}</td>
-                <td>{l.product_name || l.product_code || "—"}</td>
-                <td className="r">{l.cantidad ?? "—"}</td>
-                <td>{l.ubicacion || "—"}</td>
-                <td style={{ color: l.vencido ? "#b00020" : undefined }}>
-                  {l.expiration_date ? fdate(l.expiration_date) : "—"}{l.vencido && " ⚠"}
-                </td>
-              </tr>
-            ))}
+            {rows.map((l, i) => {
+              const key = `${l.lote}|${l.product_code}`;
+              return (
+                <Fragment key={`${key}-${i}`}>
+                  <tr onClick={() => toggle(l)} style={{ cursor: "pointer" }} className={l.vencido ? "warn" : ""}>
+                    <td className="mono">{l.lote}</td>
+                    <td>{l.product_name || l.product_code || "—"}</td>
+                    <td className="r">{l.cantidad ?? "—"}</td>
+                    <td>{l.ubicacion || "—"}</td>
+                    <td style={{ color: l.vencido ? "#b00020" : undefined }}>
+                      {l.expiration_date ? fdate(l.expiration_date) : "—"}{l.vencido && " ⚠"}
+                    </td>
+                    <td className="c"><button className="btn-sm">{open === key ? "Ocultar" : "Ver"}</button></td>
+                  </tr>
+                  {open === key && (
+                    <tr><td colSpan={6} style={{ background: "var(--cream)" }}>
+                      {loadingDetail && <p>Cargando…</p>}
+                      {!loadingDetail && detail && (
+                        <div style={{ fontSize: 13 }}>
+                          {detail.orders.length > 0 && (
+                            <div style={{ marginBottom: 8 }}>
+                              <b>Orden(es) de fabricación:</b> {detail.orders.map((o) => `${o.referencia} (${o.estado}, ${o.fecha_final ? fdate(o.fecha_final) : "—"})`).join(", ")}
+                            </div>
+                          )}
+                          {detail.exactSales.length > 0 && (
+                            <div style={{ marginBottom: 8 }}>
+                              <b>Vendido en:</b> {detail.exactSales.map((s) => `${s.numero} (${s.partner || "—"})`).join(", ")}
+                            </div>
+                          )}
+                          {detail.qualityAlerts.length > 0 && (
+                            <div style={{ marginBottom: 8 }}>
+                              <b>Alertas de calidad ({detail.qualityAlerts.length}):</b>
+                              {detail.qualityAlerts.map((a) => <div key={a.id}>— {a.title} ({a.fecha_creacion ? fdate(a.fecha_creacion) : "—"})</div>)}
+                            </div>
+                          )}
+                          {detail.qualityChecks.length > 0 ? (
+                            <div>
+                              <b>Controles de calidad ({detail.qualityChecks.length}):</b>
+                              <table className="adm-table" style={{ marginTop: 4 }}>
+                                <thead><tr><th>Punto</th><th>Resultado</th><th>Medida</th><th>Fecha</th></tr></thead>
+                                <tbody>
+                                  {detail.qualityChecks.map((c) => (
+                                    <tr key={c.id}>
+                                      <td>{c.punto_control || "—"}</td>
+                                      <td style={{ color: c.resultado === "fail" ? "#b00020" : c.resultado === "pass" ? "var(--olive)" : undefined }}>
+                                        {c.resultado === "pass" ? "✓" : c.resultado === "fail" ? "✕" : c.resultado || "—"}
+                                      </td>
+                                      <td>{c.medida ?? "—"}</td>
+                                      <td>{c.fecha_control ? fdate(c.fecha_control) : "—"}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : <p style={{ color: "var(--muted)", margin: 0 }}>Sin controles de calidad registrados para este lote.</p>}
+                        </div>
+                      )}
+                    </td></tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       )}
@@ -226,22 +290,68 @@ function Caducidades() {
 
 function Puntos() {
   const [rows, setRows] = useState<QualityPointRow[] | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const [checks, setChecks] = useState<QualityCheckRow[]>([]);
+  const [total, setTotal] = useState<number | null>(null);
+  const [loadingChecks, setLoadingChecks] = useState(false);
   useEffect(() => { adminQualityPoints().then((res) => { if (res.ok) setRows(res.rows ?? []); }); }, []);
+
+  async function toggle(codigo: string) {
+    if (open === codigo) { setOpen(null); return; }
+    setOpen(codigo); setLoadingChecks(true); setChecks([]);
+    const res = await adminChecksByPoint(codigo);
+    setLoadingChecks(false);
+    if (res.ok) { setChecks(res.rows ?? []); setTotal(res.total ?? 0); }
+  }
+
   if (!rows) return <p>Cargando…</p>;
   return (
     <div>
-      <p className="lead" style={{ marginTop: 0 }}>Catálogo de los {rows.length} puntos de control definidos en el proceso de producción — qué se comprueba, con qué método y contra qué tolerancia.</p>
+      <p className="lead" style={{ marginTop: 0 }}>Catálogo de los {rows.length} puntos de control definidos en el proceso de producción — qué se comprueba, con qué método y contra qué tolerancia. Pulsa uno para ver sus últimos controles realizados.</p>
       <table className="adm-table">
-        <thead><tr><th>Código</th><th>Título</th><th>Tipo</th><th className="r">Norma</th><th className="r">Tolerancia</th></tr></thead>
+        <thead><tr><th>Código</th><th>Título</th><th>Tipo</th><th className="r">Norma</th><th className="r">Tolerancia</th><th /></tr></thead>
         <tbody>
           {rows.map((p) => (
-            <tr key={p.codigo}>
-              <td className="mono">{p.codigo}</td>
-              <td>{p.titulo || "—"}</td>
-              <td>{p.tipo_control || "—"}</td>
-              <td className="r">{p.norma ?? "—"}</td>
-              <td className="r">{p.tolerancia_min != null || p.tolerancia_max != null ? `${p.tolerancia_min ?? "?"} – ${p.tolerancia_max ?? "?"}` : "—"}</td>
-            </tr>
+            <Fragment key={p.codigo}>
+              <tr onClick={() => toggle(p.codigo)} style={{ cursor: "pointer" }}>
+                <td className="mono">{p.codigo}</td>
+                <td>{p.titulo || "—"}</td>
+                <td>{p.tipo_control || "—"}</td>
+                <td className="r">{p.norma ?? "—"}</td>
+                <td className="r">{p.tolerancia_min != null || p.tolerancia_max != null ? `${p.tolerancia_min ?? "?"} – ${p.tolerancia_max ?? "?"}` : "—"}</td>
+                <td className="c"><button className="btn-sm">{open === p.codigo ? "Ocultar" : "Ver"}</button></td>
+              </tr>
+              {open === p.codigo && (
+                <tr><td colSpan={6} style={{ background: "var(--cream)" }}>
+                  {p.descripcion && <div style={{ marginBottom: 8, fontSize: 13 }}><b>Instrucción:</b> {p.descripcion}</div>}
+                  {loadingChecks && <p>Cargando…</p>}
+                  {!loadingChecks && (
+                    <>
+                      <p style={{ fontSize: 12, color: "var(--muted)", margin: "0 0 6px" }}>{total} controles en total con este punto — mostrando los últimos {checks.length}.</p>
+                      {checks.length > 0 && (
+                        <table className="adm-table">
+                          <thead><tr><th>Lote</th><th>Orden fabricación</th><th>Producto</th><th>Resultado</th><th className="r">Medida</th><th>Fecha</th></tr></thead>
+                          <tbody>
+                            {checks.map((c) => (
+                              <tr key={c.id}>
+                                <td className="mono">{c.lote || "—"}</td>
+                                <td className="mono">{c.orden_fabricacion || "—"}</td>
+                                <td>{c.producto || "—"}</td>
+                                <td style={{ color: c.resultado === "fail" ? "#b00020" : c.resultado === "pass" ? "var(--olive)" : undefined }}>
+                                  {c.resultado === "pass" ? "✓ Correcto" : c.resultado === "fail" ? "✕ Fallo" : c.resultado || "—"}
+                                </td>
+                                <td className="r">{c.medida ?? "—"}</td>
+                                <td>{c.fecha_control ? fdate(c.fecha_control) : "—"}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </>
+                  )}
+                </td></tr>
+              )}
+            </Fragment>
           ))}
         </tbody>
       </table>

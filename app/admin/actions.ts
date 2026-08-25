@@ -1424,6 +1424,15 @@ export async function adminQualityPoints(): Promise<Res & { rows?: QualityPointR
   return { ok: true, rows: (data ?? []) as QualityPointRow[] };
 }
 
+export async function adminChecksByPoint(codigo: string): Promise<Res & { rows?: QualityCheckRow[]; total?: number }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const { data, error, count } = await supabase.from("erp_quality_checks").select("*", { count: "exact" })
+    .eq("punto_control", codigo).order("fecha_control", { ascending: false }).limit(100);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, rows: (data ?? []) as QualityCheckRow[], total: count ?? 0 };
+}
+
 export type ExpiringLotRow = { lote: string; product_name: string | null; product_code: string | null; cantidad: number | null; expiration_date: string | null; use_date: string | null; ubicacion: string | null; vencido: boolean };
 export async function adminExpiringLots(input: { onlyExpired?: boolean; days?: number }): Promise<Res & { rows?: ExpiringLotRow[] }> {
   const supabase = await adminClient();
