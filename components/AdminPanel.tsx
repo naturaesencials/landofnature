@@ -10,6 +10,7 @@ import HistoricoFacturas from "./admin/HistoricoFacturas";
 import FacturaManual from "./admin/FacturaManual";
 import Inventario from "./admin/Inventario";
 import Trazabilidad from "./admin/Trazabilidad";
+import Calidad from "./admin/Calidad";
 import Directorio from "./admin/Directorio";
 import HistorialPedidos from "./admin/HistorialPedidos";
 import ClientesWeb from "./admin/ClientesWeb";
@@ -23,7 +24,7 @@ type Props = {
   warehouses: Warehouse[]; inventoryLevels: InventoryLevel[];
 };
 
-type Tab = "resumen" | "productos" | "pedidos" | "facturas" | "clientes" | "inventario" | "trazabilidad" | "directorio";
+type Tab = "resumen" | "productos" | "pedidos" | "facturas" | "clientes" | "inventario" | "trazabilidad" | "calidad" | "directorio";
 
 export default function AdminPanel(p: Props) {
   const [tab, setTab] = useState<Tab>("resumen");
@@ -36,6 +37,7 @@ export default function AdminPanel(p: Props) {
         <button className={tab === "productos" ? "on" : ""} onClick={() => setTab("productos")}>Productos <span>{p.products.length}</span></button>
         <button className={tab === "inventario" ? "on" : ""} onClick={() => setTab("inventario")}>Inventario</button>
         <button className={tab === "trazabilidad" ? "on" : ""} onClick={() => setTab("trazabilidad")}>Trazabilidad</button>
+        <button className={tab === "calidad" ? "on" : ""} onClick={() => setTab("calidad")}>Calidad</button>
         <button className={tab === "pedidos" ? "on" : ""} onClick={() => setTab("pedidos")}>Pedidos <span>{p.orders.length}</span></button>
         <button className={tab === "facturas" ? "on" : ""} onClick={() => setTab("facturas")}>Facturas {openInvoices > 0 ? <span>{openInvoices}</span> : null}</button>
         <button className={tab === "clientes" ? "on" : ""} onClick={() => setTab("clientes")}>Clientes</button>
@@ -48,6 +50,7 @@ export default function AdminPanel(p: Props) {
       {tab === "productos" && <Productos products={p.products} />}
       {tab === "inventario" && <Inventario products={p.products} warehouses={p.warehouses} levels={p.inventoryLevels} />}
       {tab === "trazabilidad" && <Trazabilidad />}
+      {tab === "calidad" && <Calidad />}
       {tab === "pedidos" && <PedidosSection orders={p.orders} />}
       {tab === "facturas" && <FacturasSection invoices={p.invoices} payments={p.payments} clients={p.clients} contracts={p.contracts} />}
       {tab === "clientes" && <ClientesWeb />}

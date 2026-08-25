@@ -345,8 +345,53 @@ export default function Trazabilidad() {
                     <tr><td><b>Cantidad</b></td><td>{detail.lote.cantidad ?? "—"}{detail.lote.cantidad_real != null ? ` (real: ${detail.lote.cantidad_real})` : ""}</td></tr>
                     <tr><td><b>Ubicación</b></td><td>{detail.lote.ubicacion || "—"}</td></tr>
                     <tr><td><b>Creado el</b></td><td>{detail.lote.creado_el ? fdate(detail.lote.creado_el) : "—"}</td></tr>
+                    {detail.lote.expiration_date && (
+                      <tr>
+                        <td><b>Caducidad</b></td>
+                        <td style={{ color: detail.lote.expiration_date < new Date().toISOString().slice(0, 10) ? "#b00020" : undefined }}>
+                          {fdate(detail.lote.expiration_date)}
+                          {detail.lote.expiration_date < new Date().toISOString().slice(0, 10) && " ⚠ vencido"}
+                        </td>
+                      </tr>
+                    )}
+                    {detail.lote.use_date && <tr><td><b>Consumo preferente</b></td><td>{fdate(detail.lote.use_date)}</td></tr>}
                   </tbody>
                 </table>
+              </section>
+            )}
+
+            {(detail.qualityChecks.length > 0 || detail.qualityAlerts.length > 0) && (
+              <section style={{ marginBottom: 20 }}>
+                <h4>Calidad</h4>
+                {detail.qualityAlerts.length > 0 && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div className="adm-dt">Alertas ({detail.qualityAlerts.length})</div>
+                    {detail.qualityAlerts.map((a) => (
+                      <div key={a.id} style={{ borderLeft: "2px solid #b00020", paddingLeft: 10, marginBottom: 6 }}>
+                        <b>{a.title || "Alerta"}</b> — {a.fecha_creacion ? fdate(a.fecha_creacion) : "—"} {a.prioridad && `· prioridad ${a.prioridad}`}
+                        {a.causa_raiz && <div style={{ fontSize: 12 }}>Causa: {a.causa_raiz}</div>}
+                        {a.accion_correctiva && <div style={{ fontSize: 12, color: "var(--muted)" }}>Acción correctiva: {a.accion_correctiva}</div>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {detail.qualityChecks.length > 0 && (
+                  <table className="adm-table">
+                    <thead><tr><th>Punto de control</th><th>Resultado</th><th>Medida</th><th>Fecha</th></tr></thead>
+                    <tbody>
+                      {detail.qualityChecks.map((c) => (
+                        <tr key={c.id}>
+                          <td>{c.punto_control || "—"}</td>
+                          <td style={{ color: c.resultado === "fail" ? "#b00020" : c.resultado === "pass" ? "var(--olive)" : undefined }}>
+                            {c.resultado === "pass" ? "✓ Correcto" : c.resultado === "fail" ? "✕ Fallo" : c.resultado || "—"}
+                          </td>
+                          <td>{c.medida ?? "—"}</td>
+                          <td>{c.fecha_control ? fdate(c.fecha_control) : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </section>
             )}
 

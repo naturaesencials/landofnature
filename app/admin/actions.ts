@@ -1304,7 +1304,7 @@ export async function adminErpProductPurchaseHistory(productCode: string): Promi
 }
 
 export type ErpLoteDetail = {
-  lote: { id: number; lote: string; product_code: string | null; product_name: string | null; cantidad: number | null; cantidad_real: number | null; ubicacion: string | null; creado_el: string | null } | null;
+  lote: { id: number; lote: string; product_code: string | null; product_name: string | null; cantidad: number | null; cantidad_real: number | null; ubicacion: string | null; creado_el: string | null; expiration_date: string | null; use_date: string | null } | null;
   orders: { referencia: string; product_code: string | null; product_name: string | null; cantidad: number | null; estado: string | null; fecha_inicio: string | null; fecha_final: string | null; bom: string | null }[];
   rawMaterials: { order_referencia: string; component_code: string | null; component_name: string | null; component_lote: string | null; cantidad: number | null }[];
   rawMaterialSales: { component_code: string | null; component_name: string | null; component_lote: string; numero: string; fecha: string | null; partner: string | null; delivery_referencia: string }[];
@@ -1312,6 +1312,8 @@ export type ErpLoteDetail = {
   moves: { id: number; referencia: string | null; desde: string | null; hasta: string | null; fecha: string | null; cantidad_hecha: number | null; estado: string | null }[];
   exactSales: { numero: string; fecha: string | null; partner: string | null; cantidad: number | null; product_code: string | null; product_name: string | null; delivery_referencia: string }[];
   relatedSales: { numero: string; fecha: string | null; partner: string | null; cantidad: number | null; product_code: string | null; product_name: string | null }[];
+  qualityChecks: { id: number; punto_control: string | null; resultado: string | null; medida: number | null; nota: string | null; fecha_control: string | null }[];
+  qualityAlerts: { id: number; title: string | null; fecha_creacion: string | null; prioridad: string | null; causa_raiz: string | null; accion_correctiva: string | null }[];
 };
 
 /** Un mismo número de lote puede reutilizarse en distintos productos (granel reenvasado en varios
@@ -1342,12 +1344,106 @@ export async function adminErpLoteCandidates(loteInput: string): Promise<Res & {
  *  consumidas CON SU PROPIO LOTE (extraído de los movimientos de fabricación, no de la BOM genérica),
  *  lista de materiales de referencia, movimientos de stock y facturas de venta (exacto vía albarán →
  *  pedido de venta, con fallback aproximado por producto si no hay match exacto). */
+/* ---------------- Calidad ---------------- */
+
+export type QualityStats = {
+  checksTotal: number; checksPass: number; checksFail: number; checksNone: number;
+  alertsTotal: number; alertsOpen: number;
+  lotsExpiredCount: number; lotsExpiringSoonCount: number;
+};
+export async function adminQualityStats(): Promise<Res & { stats?: QualityStats }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const today = new Date().toISOString().slice(0, 10);
+  const in30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+  const [pass, fail, none, alertsTotal, alertsOpen, lotsExpired, lotsSoon] = await Promise.all([
+    supabase.from("erp_quality_checks").select("id", { count: "exact", head: true }).eq("resultado", "pass"),
+    supabase.from("erp_quality_checks").select("id", { count: "exact", head: true }).eq("resultado", "fail"),
+    supabase.from("erp_quality_checks").select("id", { count: "exact", head: true }).eq("resultado", "none"),
+    supabase.from("erp_quality_alerts").select("id", { count: "exact", head: true }),
+    supabase.from("erp_quality_alerts").select("id", { count: "exact", head: true }).is("fecha_cierre", null),
+    supabase.from("erp_stock_lots").select("id", { count: "exact", head: true }).lt("expiration_date", today),
+    supabase.from("erp_stock_lots").select("id", { count: "exact", head: true }).gte("expiration_date", today).lt("expiration_date", in30),
+  ]);
+  return {
+    ok: true,
+    stats: {
+      checksTotal: (pass.count ?? 0) + (fail.count ?? 0) + (none.count ?? 0),
+      checksPass: pass.count ?? 0, checksFail: fail.count ?? 0, checksNone: none.count ?? 0,
+      alertsTotal: alertsTotal.count ?? 0, alertsOpen: alertsOpen.count ?? 0,
+      lotsExpiredCount: lotsExpired.count ?? 0, lotsExpiringSoonCount: lotsSoon.count ?? 0,
+    },
+  };
+}
+
+export type QualityAlertRow = {
+  id: number; title: string | null; description: string | null; fecha_creacion: string | null; fecha_cierre: string | null;
+  lote: string | null; producto: string | null; orden_fabricacion: string | null; responsable: string | null;
+  fase: string | null; prioridad: string | null; causa_raiz: string | null; accion_correctiva: string | null;
+  accion_preventiva: string | null; proveedor: string | null;
+};
+export async function adminQualityAlerts(input: { q?: string; onlyOpen?: boolean }): Promise<Res & { rows?: QualityAlertRow[] }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  let query = supabase.from("erp_quality_alerts").select("*").order("fecha_creacion", { ascending: false }).limit(500);
+  if (input.q && input.q.trim().length >= 2) {
+    const like = `%${input.q.trim()}%`;
+    query = query.or(`title.ilike.${esc(like)},lote.ilike.${esc(like)},orden_fabricacion.ilike.${esc(like)},producto.ilike.${esc(like)}`);
+  }
+  if (input.onlyOpen) query = query.is("fecha_cierre", null);
+  const { data, error } = await query;
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, rows: (data ?? []) as QualityAlertRow[] };
+}
+
+export type QualityCheckRow = {
+  id: number; punto_control: string | null; tipo_control: string | null; resultado: string | null;
+  lote: string | null; orden_fabricacion: string | null; producto: string | null; medida: number | null;
+  nota: string | null; fecha_control: string | null; responsable: string | null;
+};
+export async function adminQualityChecksSearch(input: { q?: string; resultado?: string; limit?: number }): Promise<Res & { rows?: QualityCheckRow[]; total?: number }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  if (!input.q || input.q.trim().length < 2) return { ok: true, rows: [], total: 0 };
+  const like = `%${input.q.trim()}%`;
+  let query = supabase.from("erp_quality_checks").select("*", { count: "exact" })
+    .or(`lote.ilike.${esc(like)},orden_fabricacion.ilike.${esc(like)},producto.ilike.${esc(like)}`)
+    .order("fecha_control", { ascending: false }).limit(input.limit ?? 200);
+  if (input.resultado) query = query.eq("resultado", input.resultado);
+  const { data, error, count } = await query;
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, rows: (data ?? []) as QualityCheckRow[], total: count ?? 0 };
+}
+
+export type QualityPointRow = { codigo: string; titulo: string | null; tipo_control: string | null; norma: number | null; tolerancia_min: number | null; tolerancia_max: number | null; descripcion: string | null };
+export async function adminQualityPoints(): Promise<Res & { rows?: QualityPointRow[] }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const { data, error } = await supabase.from("erp_quality_points").select("*").order("codigo");
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, rows: (data ?? []) as QualityPointRow[] };
+}
+
+export type ExpiringLotRow = { lote: string; product_name: string | null; product_code: string | null; cantidad: number | null; expiration_date: string | null; use_date: string | null; ubicacion: string | null; vencido: boolean };
+export async function adminExpiringLots(input: { onlyExpired?: boolean; days?: number }): Promise<Res & { rows?: ExpiringLotRow[] }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  const today = new Date().toISOString().slice(0, 10);
+  const horizon = new Date(Date.now() + (input.days ?? 60) * 86400000).toISOString().slice(0, 10);
+  let query = supabase.from("erp_stock_lots").select("lote,product_name,product_code,cantidad,expiration_date,use_date,ubicacion")
+    .not("expiration_date", "is", null).gt("cantidad", 0).order("expiration_date", { ascending: true }).limit(500);
+  query = input.onlyExpired ? query.lt("expiration_date", today) : query.lt("expiration_date", horizon);
+  const { data, error } = await query;
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, rows: (data ?? []).map((l) => ({ ...l, vencido: !!l.expiration_date && l.expiration_date < today })) as ExpiringLotRow[] };
+}
+
 export async function adminErpLoteDetail(loteInput: string, productCode?: string): Promise<Res & { detail?: ErpLoteDetail; canonicalLote?: string }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
   const lote = await resolveCanonicalLote(supabase, loteInput.trim());
 
-  let lotQuery = supabase.from("erp_stock_lots").select("id,lote,product_code,product_name,cantidad,cantidad_real,ubicacion,creado_el").eq("lote", lote);
+  let lotQuery = supabase.from("erp_stock_lots").select("id,lote,product_code,product_name,cantidad,cantidad_real,ubicacion,creado_el,expiration_date,use_date").eq("lote", lote);
   let ordersQuery = supabase.from("erp_production_orders").select("referencia,product_code,product_name,cantidad,estado,fecha_inicio,fecha_final,bom").eq("lote", lote);
   let movesQuery = supabase.from("erp_stock_moves").select("id,referencia,desde,hasta,fecha,cantidad_hecha,estado,product_code").eq("lote", lote).order("fecha", { ascending: true }).limit(200);
   if (productCode) {
@@ -1482,6 +1578,17 @@ export async function adminErpLoteDetail(loteInput: string, productCode?: string
     }
   }
 
+  // ---- Controles y alertas de calidad de este lote / sus órdenes de fabricación ----
+  const qualityRefs = Array.from(new Set([lote, ...orderRefs].filter(Boolean))) as string[];
+  const [qcRes, qaRes] = await Promise.all([
+    supabase.from("erp_quality_checks").select("id,punto_control,resultado,medida,nota,fecha_control")
+      .or(`lote.eq.${esc(lote)},orden_fabricacion.in.(${orderRefs.map((r) => `"${r}"`).join(",") || '""'})`)
+      .order("fecha_control", { ascending: true }).limit(200),
+    supabase.from("erp_quality_alerts").select("id,title,fecha_creacion,prioridad,causa_raiz,accion_correctiva")
+      .or(`lote.eq.${esc(lote)},orden_fabricacion.in.(${orderRefs.map((r) => `"${r}"`).join(",") || '""'})`)
+      .order("fecha_creacion", { ascending: false }),
+  ]);
+
   return {
     ok: true,
     canonicalLote: lote,
@@ -1494,6 +1601,8 @@ export async function adminErpLoteDetail(loteInput: string, productCode?: string
       moves: movesData,
       exactSales,
       relatedSales,
+      qualityChecks: (qcRes.data ?? []) as ErpLoteDetail["qualityChecks"],
+      qualityAlerts: (qaRes.data ?? []) as ErpLoteDetail["qualityAlerts"],
     },
   };
 }
