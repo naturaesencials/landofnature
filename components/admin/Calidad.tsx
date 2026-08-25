@@ -120,6 +120,7 @@ function Controles() {
   const [rows, setRows] = useState<QualityCheckRow[]>([]);
   const [total, setTotal] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState<number | null>(null);
 
   async function search() {
     if (q.trim().length < 2) return;
@@ -131,7 +132,7 @@ function Controles() {
 
   return (
     <div>
-      <p className="lead" style={{ marginTop: 0 }}>Busca por número de lote, orden de fabricación (WH/MO/...) o nombre de producto — hay 17.126 controles, así que hace falta un término de búsqueda.</p>
+      <p className="lead" style={{ marginTop: 0 }}>Busca por número de lote, orden de fabricación (WH/MO/...) o nombre de producto — hay 17.126 controles, así que hace falta un término de búsqueda. Pulsa una fila para ver todos los detalles.</p>
       <form onSubmit={(e) => { e.preventDefault(); search(); }} style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Lote, orden de fabricación o producto" style={{ flex: 1, maxWidth: 360 }} />
         <select value={resultado} onChange={(e) => setResultado(e.target.value)} style={{ fontSize: 13 }}>
@@ -144,20 +145,34 @@ function Controles() {
       {total != null && <p className="adm-hint">{total} resultados{total > 200 ? " (mostrando los primeros 200)" : ""}</p>}
       {rows.length > 0 && (
         <table className="adm-table">
-          <thead><tr><th>Punto de control</th><th>Resultado</th><th>Lote</th><th>Orden fabricación</th><th>Producto</th><th className="r">Medida</th><th>Fecha</th></tr></thead>
+          <thead><tr><th>Punto de control</th><th>Resultado</th><th>Lote</th><th>Orden fabricación</th><th>Producto</th><th className="r">Medida</th><th>Fecha</th><th /></tr></thead>
           <tbody>
             {rows.map((c) => (
-              <tr key={c.id}>
-                <td>{c.punto_control || "—"}</td>
-                <td style={{ color: c.resultado === "fail" ? "#b00020" : c.resultado === "pass" ? "var(--olive)" : undefined }}>
-                  {c.resultado === "pass" ? "✓ Correcto" : c.resultado === "fail" ? "✕ Fallo" : c.resultado || "—"}
-                </td>
-                <td className="mono">{c.lote || "—"}</td>
-                <td className="mono">{c.orden_fabricacion || "—"}</td>
-                <td>{c.producto || "—"}</td>
-                <td className="r">{c.medida ?? "—"}</td>
-                <td>{c.fecha_control ? fdate(c.fecha_control) : "—"}</td>
-              </tr>
+              <Fragment key={c.id}>
+                <tr onClick={() => setOpen(open === c.id ? null : c.id)} style={{ cursor: "pointer" }}>
+                  <td>{c.punto_control || "—"}</td>
+                  <td style={{ color: c.resultado === "fail" ? "#b00020" : c.resultado === "pass" ? "var(--olive)" : undefined }}>
+                    {c.resultado === "pass" ? "✓ Correcto" : c.resultado === "fail" ? "✕ Fallo" : c.resultado || "—"}
+                  </td>
+                  <td className="mono">{c.lote || "—"}</td>
+                  <td className="mono">{c.orden_fabricacion || "—"}</td>
+                  <td>{c.producto || "—"}</td>
+                  <td className="r">{c.medida ?? "—"}</td>
+                  <td>{c.fecha_control ? fdate(c.fecha_control) : "—"}</td>
+                  <td className="c"><button className="btn-sm">{open === c.id ? "Ocultar" : "Ver"}</button></td>
+                </tr>
+                {open === c.id && (
+                  <tr><td colSpan={8} style={{ background: "var(--cream)" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 13 }}>
+                      <div><b>Tipo de control:</b> {c.tipo_control || "—"}</div>
+                      <div><b>Responsable:</b> {c.responsable || "—"}</div>
+                      <div><b>Fecha exacta:</b> {c.fecha_control ? new Date(c.fecha_control).toLocaleString("es-ES") : "—"}</div>
+                      <div><b>Medida registrada:</b> {c.medida ?? "—"}</div>
+                    </div>
+                    {c.nota && <div style={{ marginTop: 8 }}><b>Nota / instrucción del control:</b><div style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>{c.nota}</div></div>}
+                  </td></tr>
+                )}
+              </Fragment>
             ))}
           </tbody>
         </table>

@@ -20,6 +20,7 @@ export default function Trazabilidad() {
   const [loteInput, setLoteInput] = useState("");
   const [lote, setLote] = useState<string | null>(null);
   const [detail, setDetail] = useState<ErpLoteDetail | null>(null);
+  const [openCheck, setOpenCheck] = useState<number | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
@@ -377,17 +378,31 @@ export default function Trazabilidad() {
                 )}
                 {detail.qualityChecks.length > 0 && (
                   <table className="adm-table">
-                    <thead><tr><th>Punto de control</th><th>Resultado</th><th>Medida</th><th>Fecha</th></tr></thead>
+                    <thead><tr><th>Punto de control</th><th>Resultado</th><th>Medida</th><th>Fecha</th><th /></tr></thead>
                     <tbody>
                       {detail.qualityChecks.map((c) => (
-                        <tr key={c.id}>
-                          <td>{c.punto_control || "—"}</td>
-                          <td style={{ color: c.resultado === "fail" ? "#b00020" : c.resultado === "pass" ? "var(--olive)" : undefined }}>
-                            {c.resultado === "pass" ? "✓ Correcto" : c.resultado === "fail" ? "✕ Fallo" : c.resultado || "—"}
-                          </td>
-                          <td>{c.medida ?? "—"}</td>
-                          <td>{c.fecha_control ? fdate(c.fecha_control) : "—"}</td>
-                        </tr>
+                        <Fragment key={c.id}>
+                          <tr onClick={() => setOpenCheck(openCheck === c.id ? null : c.id)} style={{ cursor: "pointer" }}>
+                            <td>{c.punto_control || "—"}</td>
+                            <td style={{ color: c.resultado === "fail" ? "#b00020" : c.resultado === "pass" ? "var(--olive)" : undefined }}>
+                              {c.resultado === "pass" ? "✓ Correcto" : c.resultado === "fail" ? "✕ Fallo" : c.resultado || "—"}
+                            </td>
+                            <td>{c.medida ?? "—"}</td>
+                            <td>{c.fecha_control ? fdate(c.fecha_control) : "—"}</td>
+                            <td className="c"><button className="btn-sm">{openCheck === c.id ? "Ocultar" : "Ver"}</button></td>
+                          </tr>
+                          {openCheck === c.id && (
+                            <tr><td colSpan={5} style={{ background: "var(--cream)" }}>
+                              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, fontSize: 13 }}>
+                                <div><b>Tipo de control:</b> {c.tipo_control || "—"}</div>
+                                <div><b>Responsable:</b> {c.responsable || "—"}</div>
+                                <div><b>Orden de fabricación:</b> {c.orden_fabricacion || "—"}</div>
+                                <div><b>Fecha exacta:</b> {c.fecha_control ? new Date(c.fecha_control).toLocaleString("es-ES") : "—"}</div>
+                              </div>
+                              {c.nota && <div style={{ marginTop: 8 }}><b>Nota / instrucción del control:</b><div style={{ whiteSpace: "pre-wrap", marginTop: 4 }}>{c.nota}</div></div>}
+                            </td></tr>
+                          )}
+                        </Fragment>
                       ))}
                     </tbody>
                   </table>

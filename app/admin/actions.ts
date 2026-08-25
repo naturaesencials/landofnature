@@ -1312,7 +1312,7 @@ export type ErpLoteDetail = {
   moves: { id: number; referencia: string | null; desde: string | null; hasta: string | null; fecha: string | null; cantidad_hecha: number | null; estado: string | null }[];
   exactSales: { numero: string; fecha: string | null; partner: string | null; cantidad: number | null; product_code: string | null; product_name: string | null; delivery_referencia: string }[];
   relatedSales: { numero: string; fecha: string | null; partner: string | null; cantidad: number | null; product_code: string | null; product_name: string | null }[];
-  qualityChecks: { id: number; punto_control: string | null; resultado: string | null; medida: number | null; nota: string | null; fecha_control: string | null }[];
+  qualityChecks: { id: number; punto_control: string | null; tipo_control: string | null; resultado: string | null; medida: number | null; nota: string | null; fecha_control: string | null; responsable: string | null; orden_fabricacion: string | null; lote: string | null; producto: string | null }[];
   qualityAlerts: { id: number; title: string | null; fecha_creacion: string | null; prioridad: string | null; causa_raiz: string | null; accion_correctiva: string | null }[];
 };
 
@@ -1581,7 +1581,7 @@ export async function adminErpLoteDetail(loteInput: string, productCode?: string
   // ---- Controles y alertas de calidad de este lote / sus órdenes de fabricación ----
   const qualityRefs = Array.from(new Set([lote, ...orderRefs].filter(Boolean))) as string[];
   const [qcRes, qaRes] = await Promise.all([
-    supabase.from("erp_quality_checks").select("id,punto_control,resultado,medida,nota,fecha_control")
+    supabase.from("erp_quality_checks").select("id,punto_control,tipo_control,resultado,medida,nota,fecha_control,responsable,orden_fabricacion,lote,producto")
       .or(`lote.eq.${esc(lote)},orden_fabricacion.in.(${orderRefs.map((r) => `"${r}"`).join(",") || '""'})`)
       .order("fecha_control", { ascending: true }).limit(200),
     supabase.from("erp_quality_alerts").select("id,title,fecha_creacion,prioridad,causa_raiz,accion_correctiva")
