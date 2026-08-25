@@ -1304,7 +1304,7 @@ export async function adminErpProductPurchaseHistory(productCode: string): Promi
 }
 
 export type ErpLoteDetail = {
-  lote: { id: number; lote: string; product_code: string | null; product_name: string | null; cantidad: number | null; cantidad_real: number | null; ubicacion: string | null; creado_el: string | null; expiration_date: string | null; use_date: string | null } | null;
+  lote: { id: number; lote: string; product_code: string | null; product_name: string | null; cantidad: number | null; cantidad_real: number | null; ubicacion: string | null; creado_el: string | null; expiration_date: string | null; use_date: string | null; removal_date: string | null; alert_date: string | null } | null;
   orders: { referencia: string; product_code: string | null; product_name: string | null; cantidad: number | null; estado: string | null; fecha_inicio: string | null; fecha_final: string | null; bom: string | null }[];
   rawMaterials: { order_referencia: string; component_code: string | null; component_name: string | null; component_lote: string | null; cantidad: number | null }[];
   rawMaterialSales: { component_code: string | null; component_name: string | null; component_lote: string; numero: string; fecha: string | null; partner: string | null; delivery_referencia: string }[];
@@ -1380,7 +1380,7 @@ export type QualityAlertRow = {
   id: number; title: string | null; description: string | null; fecha_creacion: string | null; fecha_cierre: string | null;
   lote: string | null; producto: string | null; orden_fabricacion: string | null; responsable: string | null;
   fase: string | null; prioridad: string | null; causa_raiz: string | null; accion_correctiva: string | null;
-  accion_preventiva: string | null; proveedor: string | null;
+  accion_preventiva: string | null; proveedor: string | null; origen?: string;
 };
 export async function adminQualityAlerts(input: { q?: string; onlyOpen?: boolean }): Promise<Res & { rows?: QualityAlertRow[] }> {
   const supabase = await adminClient();
@@ -1399,7 +1399,7 @@ export async function adminQualityAlerts(input: { q?: string; onlyOpen?: boolean
 export type QualityCheckRow = {
   id: number; punto_control: string | null; tipo_control: string | null; resultado: string | null;
   lote: string | null; orden_fabricacion: string | null; producto: string | null; medida: number | null;
-  nota: string | null; fecha_control: string | null; responsable: string | null;
+  nota: string | null; fecha_control: string | null; responsable: string | null; origen?: string;
 };
 export async function adminQualityChecksSearch(input: { q?: string; resultado?: string; limit?: number }): Promise<Res & { rows?: QualityCheckRow[]; total?: number }> {
   const supabase = await adminClient();
@@ -1415,7 +1415,7 @@ export async function adminQualityChecksSearch(input: { q?: string; resultado?: 
   return { ok: true, rows: (data ?? []) as QualityCheckRow[], total: count ?? 0 };
 }
 
-export type QualityPointRow = { codigo: string; titulo: string | null; tipo_control: string | null; norma: number | null; tolerancia_min: number | null; tolerancia_max: number | null; descripcion: string | null };
+export type QualityPointRow = { codigo: string; titulo: string | null; tipo_control: string | null; norma: number | null; tolerancia_min: number | null; tolerancia_max: number | null; descripcion: string | null; origen?: string };
 export async function adminQualityPoints(): Promise<Res & { rows?: QualityPointRow[] }> {
   const supabase = await adminClient();
   if (!supabase) return { ok: false, error: "No autorizado." };
@@ -1431,6 +1431,119 @@ export async function adminChecksByPoint(codigo: string): Promise<Res & { rows?:
     .eq("punto_control", codigo).order("fecha_control", { ascending: false }).limit(100);
   if (error) return { ok: false, error: error.message };
   return { ok: true, rows: (data ?? []) as QualityCheckRow[], total: count ?? 0 };
+}
+
+/* ---- Crear / editar puntos de control ---- */
+export async function adminSaveQualityPoint(input: {
+  codigo?: string | null; titulo: string; tipo_control: string | null; norma: number | null;
+  tolerancia_min: number | null; tolerancia_max: number | null; descripcion: string | null;
+}): Promise<Res & { codigo?: string }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  if (!input.titulo.trim()) return { ok: false, error: "El título es obligatorio." };
+
+  if (input.codigo) {
+    const { error } = await supabase.from("erp_quality_points").update({
+      titulo: input.titulo.trim(), tipo_control: input.tipo_control, norma: input.norma,
+      tolerancia_min: input.tolerancia_min, tolerancia_max: input.tolerancia_max, descripcion: input.descripcion,
+      updated_at: new Date().toISOString(),
+    }).eq("codigo", input.codigo);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, codigo: input.codigo };
+  }
+
+  const { count } = await supabase.from("erp_quality_points").select("codigo", { count: "exact", head: true });
+  let codigo = `QCW${String((count ?? 0) + 1).padStart(5, "0")}`;
+  // aseguramos que no colisione con uno existente
+  for (let i = 0; i < 20; i++) {
+    const { data: exists } = await supabase.from("erp_quality_points").select("codigo").eq("codigo", codigo).maybeSingle();
+    if (!exists) break;
+    codigo = `QCW${String((count ?? 0) + 1 + i + 1).padStart(5, "0")}`;
+  }
+  const { error } = await supabase.from("erp_quality_points").insert({
+    codigo, titulo: input.titulo.trim(), tipo_control: input.tipo_control, norma: input.norma,
+    tolerancia_min: input.tolerancia_min, tolerancia_max: input.tolerancia_max, descripcion: input.descripcion,
+    origen: "web", updated_at: new Date().toISOString(),
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, codigo };
+}
+
+/* ---- Registrar / editar controles de calidad (tests) ---- */
+export async function adminSaveQualityCheck(input: {
+  id?: number | null; punto_control: string; tipo_control?: string | null; resultado: string;
+  lote?: string | null; orden_fabricacion?: string | null; producto?: string | null;
+  medida?: number | null; nota?: string | null; fecha_control: string; responsable?: string | null;
+}): Promise<Res & { id?: number }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  if (!input.punto_control.trim()) return { ok: false, error: "Indica el punto de control." };
+  if (!input.fecha_control) return { ok: false, error: "Indica la fecha del control." };
+
+  const payload = {
+    punto_control: input.punto_control.trim(), tipo_control: input.tipo_control || null, resultado: input.resultado,
+    lote: input.lote || null, orden_fabricacion: input.orden_fabricacion || null, producto: input.producto || null,
+    medida: input.medida ?? null, nota: input.nota || null, fecha_control: input.fecha_control,
+    responsable: input.responsable || null, updated_at: new Date().toISOString(),
+  };
+
+  if (input.id) {
+    const { error } = await supabase.from("erp_quality_checks").update(payload).eq("id", input.id);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, id: input.id };
+  }
+  const { data, error } = await supabase.from("erp_quality_checks").insert({ ...payload, origen: "web" }).select("id").single();
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, id: data.id };
+}
+
+/* ---- Crear / editar alertas de calidad ---- */
+export async function adminSaveQualityAlert(input: {
+  id?: number | null; title: string; description?: string | null; fecha_creacion?: string | null; fecha_cierre?: string | null;
+  lote?: string | null; producto?: string | null; orden_fabricacion?: string | null; responsable?: string | null;
+  fase?: string | null; prioridad?: string | null; causa_raiz?: string | null; accion_correctiva?: string | null;
+  accion_preventiva?: string | null; proveedor?: string | null;
+}): Promise<Res & { id?: number }> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  if (!input.title.trim()) return { ok: false, error: "El título es obligatorio." };
+
+  const payload = {
+    title: input.title.trim(), description: input.description || null,
+    fecha_cierre: input.fecha_cierre || null, lote: input.lote || null, producto: input.producto || null,
+    orden_fabricacion: input.orden_fabricacion || null, responsable: input.responsable || null, fase: input.fase || null,
+    prioridad: input.prioridad || null, causa_raiz: input.causa_raiz || null, accion_correctiva: input.accion_correctiva || null,
+    accion_preventiva: input.accion_preventiva || null, proveedor: input.proveedor || null, updated_at: new Date().toISOString(),
+  };
+
+  if (input.id) {
+    const { error } = await supabase.from("erp_quality_alerts").update(payload).eq("id", input.id);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, id: input.id };
+  }
+  const { data, error } = await supabase.from("erp_quality_alerts").insert({
+    ...payload, fecha_creacion: input.fecha_creacion || new Date().toISOString(), origen: "web",
+  }).select("id").single();
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, id: data.id };
+}
+
+/* ---- Editar fechas de caducidad de un lote ---- */
+export async function adminUpdateLotDates(input: {
+  lote: string; product_code?: string | null;
+  expiration_date: string | null; use_date: string | null; removal_date: string | null; alert_date: string | null;
+}): Promise<Res> {
+  const supabase = await adminClient();
+  if (!supabase) return { ok: false, error: "No autorizado." };
+  let query = supabase.from("erp_stock_lots").update({
+    expiration_date: input.expiration_date, use_date: input.use_date,
+    removal_date: input.removal_date, alert_date: input.alert_date,
+    dates_updated_at: new Date().toISOString(),
+  }).eq("lote", input.lote);
+  if (input.product_code) query = query.eq("product_code", input.product_code);
+  const { error } = await query;
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
 }
 
 export type ExpiringLotRow = { lote: string; product_name: string | null; product_code: string | null; cantidad: number | null; expiration_date: string | null; use_date: string | null; ubicacion: string | null; vencido: boolean };
@@ -1452,7 +1565,7 @@ export async function adminErpLoteDetail(loteInput: string, productCode?: string
   if (!supabase) return { ok: false, error: "No autorizado." };
   const lote = await resolveCanonicalLote(supabase, loteInput.trim());
 
-  let lotQuery = supabase.from("erp_stock_lots").select("id,lote,product_code,product_name,cantidad,cantidad_real,ubicacion,creado_el,expiration_date,use_date").eq("lote", lote);
+  let lotQuery = supabase.from("erp_stock_lots").select("id,lote,product_code,product_name,cantidad,cantidad_real,ubicacion,creado_el,expiration_date,use_date,removal_date,alert_date").eq("lote", lote);
   let ordersQuery = supabase.from("erp_production_orders").select("referencia,product_code,product_name,cantidad,estado,fecha_inicio,fecha_final,bom").eq("lote", lote);
   let movesQuery = supabase.from("erp_stock_moves").select("id,referencia,desde,hasta,fecha,cantidad_hecha,estado,product_code").eq("lote", lote).order("fecha", { ascending: true }).limit(200);
   if (productCode) {
